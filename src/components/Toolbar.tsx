@@ -8,10 +8,10 @@ import {
   FileDown,
   FileCode,
   Settings,
-  Trash2,
   PanelRight,
   Download,
 } from "lucide-react";
+import Link from "next/link";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { saveDocumentHtml } from "@/lib/settings";
 import type { DocumentLayout } from "@/lib/documentLayout";
@@ -116,18 +116,16 @@ export function Toolbar({
     }
   }
 
-  function clearDoc() {
-    if (typeof window !== "undefined" && !window.confirm("Clear the document?")) return;
-    const empty = "<p></p>";
-    setHtml(empty);
-    saveDocumentHtml(empty);
-  }
-
   return (
     <header className="flex h-11 w-full shrink-0 items-center gap-1 border-b border-zinc-200 bg-white px-2 dark:border-surface-border dark:bg-surface-raised">
-      <span className="mr-2 px-2 font-mono text-xs font-semibold tracking-tight text-zinc-800 dark:text-zinc-200">
+      <Link
+        href="/"
+        className="mr-2 flex shrink-0 items-center gap-2 rounded-md px-2 py-1 font-mono text-xs font-semibold tracking-tight text-zinc-800 transition hover:bg-zinc-100 hover:text-zinc-950 dark:text-zinc-200 dark:hover:bg-surface-overlay dark:hover:text-white"
+        title="Home"
+      >
+        <img src="/doctex.png" alt="" width={20} height={20} className="h-5 w-5 rounded-sm" />
         DocTex
-      </span>
+      </Link>
       <input
         ref={importRef}
         type="file"
@@ -235,14 +233,6 @@ export function Toolbar({
       >
         <Settings className="h-3.5 w-3.5" />
         Settings
-      </button>
-      <button
-        type="button"
-        onClick={clearDoc}
-        className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-zinc-500 hover:bg-red-100 hover:text-red-800 dark:hover:bg-red-950/40 dark:hover:text-red-300"
-        title="Clear document"
-      >
-        <Trash2 className="h-3.5 w-3.5" />
       </button>
     </header>
   );

@@ -325,7 +325,7 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
         {turns.length === 0 && (
           <div className="rounded-xl border border-dashed border-zinc-200/90 bg-zinc-50/50 p-3 dark:border-surface-border dark:bg-surface-overlay/40">
             <p className="text-xs font-medium text-zinc-800 dark:text-zinc-200">
-              Cursor-style context
+              Context blocks
             </p>
             <p className="mt-1 text-[11px] leading-relaxed text-zinc-600 dark:text-zinc-500">
               <strong className="font-medium text-zinc-700 dark:text-zinc-400">Paste</strong> into
