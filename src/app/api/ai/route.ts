@@ -1,5 +1,9 @@
 import { NextRequest } from "next/server";
 import { isAllowedModel, type ModelProvider } from "@/lib/modelCatalog";
+import {
+  AI_PROXY_MAX_BODY_BYTES,
+  jsonError,
+} from "@/lib/aiProxySecurity";
 
 const OPENAI_BASE = "https://api.openai.com/v1";
 
@@ -11,6 +15,26 @@ type Body = {
   apiKey: string;
   provider?: ModelProvider;
 };
+
+const MAX_MESSAGES = 200;
+
+function drainResponse(res: Response): void {
+  void res.text().catch(() => {});
+}
+
+/** Never log or return provider bodies — may echo key-related hints. */
+function providerErrorResponse(status: number): Response {
+  if (status === 401 || status === 403) {
+    return jsonError("API key was rejected by the provider.", 401);
+  }
+  if (status === 429) {
+    return jsonError("Provider rate limit reached. Try again shortly.", 429);
+  }
+  if (status >= 400 && status < 500) {
+    return jsonError("AI request was not accepted. Check your key and model.", 400);
+  }
+  return jsonError("AI service temporarily unavailable. Try again later.", 502);
+}
 
 function toGeminiPayload(messages: ChatMessage[]) {
   const systemChunks: string[] = [];
@@ -48,15 +72,48 @@ function openAiSseChunk(content: string): string {
   return `data: ${payload}\n\n`;
 }
 
-export async function POST(req: NextRequest) {
+function parseBody(raw: string): Body | null {
   let body: Body;
   try {
-    body = (await req.json()) as Body;
+    body = JSON.parse(raw) as Body;
   } catch {
-    return new Response(JSON.stringify({ error: "Invalid JSON" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
+    return null;
+  }
+  if (!body || typeof body !== "object") return null;
+  if (!Array.isArray(body.messages)) return null;
+  if (body.messages.length > MAX_MESSAGES) return null;
+  for (const m of body.messages) {
+    if (!m || typeof m !== "object") return null;
+    if (typeof m.role !== "string" || typeof m.content !== "string") return null;
+  }
+  if (typeof body.model !== "string" || typeof body.apiKey !== "string") return null;
+  return body;
+}
+
+export async function POST(req: NextRequest) {
+  const maxBytes = AI_PROXY_MAX_BODY_BYTES;
+  const cl = req.headers.get("content-length");
+  if (cl) {
+    const n = Number.parseInt(cl, 10);
+    if (!Number.isNaN(n) && n > maxBytes) {
+      return jsonError("Request body too large.", 413);
+    }
+  }
+
+  let raw: string;
+  try {
+    raw = await req.text();
+  } catch {
+    return jsonError("Invalid request body.", 400);
+  }
+
+  if (raw.length > maxBytes) {
+    return jsonError("Request body too large.", 413);
+  }
+
+  const body = parseBody(raw);
+  if (!body) {
+    return jsonError("Invalid JSON or message payload.", 400);
   }
 
   const { messages, model, apiKey } = body;
@@ -64,24 +121,15 @@ export async function POST(req: NextRequest) {
     body.provider === "gemini" || body.provider === "openai" ? body.provider : "openai";
 
   if (!apiKey?.trim()) {
-    return new Response(JSON.stringify({ error: "Add your API key in Settings." }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
+    return jsonError("Add your API key in Settings.", 400);
   }
 
   if (!model?.trim()) {
-    return new Response(JSON.stringify({ error: "Choose a model in Settings." }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
+    return jsonError("Choose a model in Settings.", 400);
   }
 
   if (!isAllowedModel(provider, model.trim())) {
-    return new Response(JSON.stringify({ error: "Unknown or unsupported model for this provider." }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
+    return jsonError("Unknown or unsupported model for this provider.", 400);
   }
 
   if (provider === "openai") {
@@ -99,8 +147,12 @@ export async function POST(req: NextRequest) {
     });
 
     if (!upstream.ok) {
-      const err = await upstream.text();
-      return new Response(err || upstream.statusText, { status: upstream.status });
+      const st = upstream.status;
+      drainResponse(upstream);
+      if (process.env.NODE_ENV === "development") {
+        console.error("[api/ai] OpenAI error status:", st);
+      }
+      return providerErrorResponse(st);
     }
 
     return new Response(upstream.body, {
@@ -114,10 +166,7 @@ export async function POST(req: NextRequest) {
 
   const { systemInstruction, contents } = toGeminiPayload(messages);
   if (contents.length === 0) {
-    return new Response(JSON.stringify({ error: "No messages to send to Gemini." }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
+    return jsonError("No messages to send to Gemini.", 400);
   }
 
   const geminiBody: Record<string, unknown> = { contents };
@@ -137,15 +186,16 @@ export async function POST(req: NextRequest) {
   });
 
   if (!upstream.ok) {
-    const err = await upstream.text();
-    return new Response(err || upstream.statusText, { status: upstream.status });
+    const st = upstream.status;
+    drainResponse(upstream);
+    if (process.env.NODE_ENV === "development") {
+      console.error("[api/ai] Gemini error status:", st);
+    }
+    return providerErrorResponse(st);
   }
 
   if (!upstream.body) {
-    return new Response(JSON.stringify({ error: "Empty response from Gemini." }), {
-      status: 502,
-      headers: { "Content-Type": "application/json" },
-    });
+    return jsonError("Empty response from provider.", 502);
   }
 
   const stream = new ReadableStream({
