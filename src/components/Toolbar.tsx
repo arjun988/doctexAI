@@ -10,6 +10,7 @@ import {
   Settings,
   PanelRight,
   Download,
+  Sigma,
 } from "lucide-react";
 import Link from "next/link";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -20,6 +21,9 @@ import {
   getHtmlExportStyles,
   wrapExportedBody,
 } from "@/lib/documentExport";
+import { htmlToLatexDocument } from "@/lib/htmlToLatex";
+import { LatexExportModal } from "@/components/LatexExportModal";
+import Image from "next/image";
 
 type Props = {
   getHtml: () => string;
@@ -42,6 +46,11 @@ export function Toolbar({
   const exportWrapRef = useRef<HTMLDivElement>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [pdfBusy, setPdfBusy] = useState(false);
+  const [latexModal, setLatexModal] = useState<{
+    open: boolean;
+    tex: string;
+    filename: string;
+  }>({ open: false, tex: "", filename: "document.tex" });
 
   useEffect(() => {
     if (!exportOpen) return;
@@ -60,6 +69,15 @@ export function Toolbar({
     const { value: html } = await mammoth.convertToHtml({ arrayBuffer: buf });
     setHtml(html);
     saveDocumentHtml(html);
+  }
+
+  function openLatexPreviewFromEditor() {
+    const html = getHtml();
+    const tex = htmlToLatexDocument(html, {
+      title: "Document",
+      layout: getLayout(),
+    });
+    setLatexModal({ open: true, tex, filename: "document.tex" });
   }
 
   function downloadHtml() {
@@ -123,7 +141,7 @@ export function Toolbar({
         className="mr-2 flex shrink-0 items-center gap-2 rounded-md px-2 py-1 font-mono text-xs font-semibold tracking-tight text-zinc-800 transition hover:bg-zinc-100 hover:text-zinc-950 dark:text-zinc-200 dark:hover:bg-surface-overlay dark:hover:text-white"
         title="Home"
       >
-        <img src="/doctex.png" alt="" width={20} height={20} className="h-5 w-5 rounded-sm" />
+        <Image src="/doctex.png" alt="" width={20} height={20} className="h-5 w-5 rounded-sm" />
         DocTex
       </Link>
       <input
@@ -153,7 +171,7 @@ export function Toolbar({
               ? "bg-zinc-200 text-zinc-900 dark:bg-surface-overlay dark:text-zinc-100"
               : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-surface-overlay dark:hover:text-zinc-100"
           }`}
-          title="Export document"
+          title="Export the open document (typed, imported Word, or both)"
         >
           Export
           <ChevronDown
@@ -207,6 +225,20 @@ export function Toolbar({
               <Download className="h-3.5 w-3.5 shrink-0 text-zinc-500 dark:text-zinc-400" />
               {pdfBusy ? "PDF (preparing…)" : "PDF"}
             </button>
+            <button
+              type="button"
+              role="menuitem"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                openLatexPreviewFromEditor();
+                setExportOpen(false);
+              }}
+              title="Preview and download LaTeX for the open document (respects Page setup)."
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-zinc-800 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800"
+            >
+              <Sigma className="h-3.5 w-3.5 shrink-0 text-zinc-500 dark:text-zinc-400" />
+              LaTeX (.tex)
+            </button>
           </div>
         ) : null}
       </div>
@@ -234,6 +266,12 @@ export function Toolbar({
         <Settings className="h-3.5 w-3.5" />
         Settings
       </button>
+      <LatexExportModal
+        open={latexModal.open}
+        onClose={() => setLatexModal((m) => ({ ...m, open: false }))}
+        initialTex={latexModal.tex}
+        suggestedFilename={latexModal.filename}
+      />
     </header>
   );
 }

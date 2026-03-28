@@ -23,7 +23,16 @@ export async function streamAiChat(
 
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(errText || `Request failed (${res.status})`);
+    let message = `Request failed (${res.status})`;
+    try {
+      const parsed = JSON.parse(errText) as { error?: unknown };
+      if (typeof parsed.error === "string" && parsed.error) {
+        message = parsed.error;
+      }
+    } catch {
+      /* use generic message */
+    }
+    throw new Error(message);
   }
 
   const reader = res.body?.getReader();

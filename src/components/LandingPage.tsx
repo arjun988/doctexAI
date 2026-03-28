@@ -1,168 +1,154 @@
+import Image from "next/image";
 import Link from "next/link";
 
-function IconSparkles({ className }: { className?: string }) {
-  return (
-    <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path
-        d="M12 3v3m0 12v3M4.6 12h3m8.8 0h3M6.3 6.3l2.1 2.1m7.2 7.2l2.1 2.1m0-11.4l-2.1 2.1M8.4 15.6l-2.1 2.1"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
-      <circle cx="12" cy="12" r="2" fill="currentColor" />
-    </svg>
-  );
-}
+const agents = [
+  {
+    name: "Fix grammar",
+    blurb:
+      "Tighten phrasing and mechanics while preserving your voice—ideal for drafts imported from Word or typed from scratch.",
+  },
+  {
+    name: "Clean formatting",
+    blurb:
+      "Turn dense text into clear paragraphs, lists, and headings without changing what you meant to say.",
+  },
+  {
+    name: "Math",
+    blurb:
+      "Keep KaTeX-LaTeX consistent: inline and display equations, symbols, and notation that stays readable when you export.",
+  },
+  {
+    name: "Research paper",
+    blurb:
+      "Apply journal-style structure: typography, spacing, abstracts, captions, and bibliography cues (IEEE, APA, MLA) as editable HTML.",
+  },
+];
 
-function IconFileUp({ className }: { className?: string }) {
-  return (
-    <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path
-        d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M14 2v6h6M12 17V8m0 0l-2.5 2.5M12 8l2.5 2.5"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function IconFileText({ className }: { className?: string }) {
-  return (
-    <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path
-        d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path d="M14 2v6h6M8 13h8M8 17h8M8 9h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function IconArrowRight({ className }: { className?: string }) {
-  return (
-    <svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path
-        d="M5 12h14M13 6l6 6-6 6"
-        stroke="currentColor"
-        strokeWidth="1.75"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
+const capabilities = [
+  "Import Word (.docx) and keep working in the browser",
+  "Page setup: columns, margins, orientation, header & footer—honored in PDF and LaTeX export",
+  "Export HTML, Word, PDF, and LaTeX with a live preview before you download",
+  "Rich editor: tables, links, images, task lists, page breaks, and a full math workflow",
+  "Assistant uses your selection, context blocks, and the full document when you want it to",
+  "Bring your own API key; no account wall",
+];
 
 export function LandingPage() {
   return (
-    <div className="min-h-screen bg-[#f7f5f2] text-[#111111] antialiased selection:bg-[#1a1a1a]/10">
-      <header className="mx-auto flex max-w-5xl items-center justify-between px-5 py-6 sm:px-8">
+    <div className="min-h-screen bg-[#faf9f7] text-[#171717] antialiased selection:bg-[#1c1917]/8">
+      <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-7 sm:px-10">
         <Link
           href="/"
-          className="text-sm font-semibold tracking-tight text-[#0a0a0a] opacity-90 transition hover:opacity-100"
+          className="text-[15px] font-semibold tracking-tight text-[#0c0c0c] transition opacity-90 hover:opacity-100"
         >
           DocTex
         </Link>
         <Link
           href="/editor"
-          className="rounded-full bg-[#141414] px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-black"
+          className="rounded-full bg-[#0c0c0c] px-5 py-2.5 text-sm font-medium text-white transition hover:bg-black"
         >
           Open editor
         </Link>
       </header>
 
       <main>
-        <section className="mx-auto max-w-5xl px-5 pb-20 pt-10 sm:px-8 sm:pb-28 sm:pt-16">
-          <p className="text-[13px] font-medium uppercase tracking-[0.14em] text-[#6b6358]">
-            Documents · AI
+        <section className="mx-auto max-w-6xl px-6 pb-16 pt-4 sm:px-10 sm:pb-24 sm:pt-6">
+          <p className="text-[12px] font-medium uppercase tracking-[0.16em] text-[#78716c]">
+            Documents, math, export
           </p>
-          <h1 className="mt-6 max-w-[18ch] font-landing-serif text-[2.5rem] font-normal leading-[1.08] text-[#0a0a0a] sm:max-w-none sm:text-5xl sm:leading-[1.06] lg:text-[3.35rem]">
-            A calm place to write, edit, and refine.
+          <h1 className="mt-5 max-w-3xl font-landing-serif text-[2.35rem] font-normal leading-[1.06] tracking-[-0.02em] text-[#0c0c0c] sm:text-5xl sm:leading-[1.04] lg:text-[3.1rem]">
+            Write seriously. Let specialized agents handle the tedious parts.
           </h1>
-          <p className="mt-8 max-w-lg text-lg leading-relaxed text-[#45413a] sm:text-xl sm:leading-relaxed">
-            Import Word, shape your draft with an assistant beside you, and export when you are
-            ready — without leaving the browser.
+          <p className="mt-6 max-w-xl text-lg leading-relaxed text-[#44403c] sm:text-[1.125rem]">
+            One surface for long-form work: equations and figures beside an assistant that knows grammar, structure,
+            math, and manuscript conventions—then ship to HTML, Word, PDF, or LaTeX.
           </p>
-          <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+          <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-5">
             <Link
               href="/editor"
-              className="inline-flex items-center justify-center gap-2 rounded-full bg-[#141414] px-7 py-3.5 text-sm font-medium text-white transition hover:bg-black"
+              className="inline-flex w-fit items-center justify-center rounded-full bg-[#0c0c0c] px-7 py-3.5 text-sm font-medium text-white transition hover:bg-black"
             >
               Start writing
-              <IconArrowRight className="opacity-90" />
             </Link>
-            <p className="text-sm text-[#6b6358]">No account required · Your key, your model</p>
+            <p className="text-sm text-[#78716c]">Your key · No account · Runs in the browser</p>
           </div>
         </section>
 
-        <section className="border-t border-[#e5e0d8] bg-[#faf9f7] px-5 py-20 sm:px-8">
-          <div className="mx-auto max-w-5xl">
-            <p className="font-landing-serif text-2xl font-normal text-[#0a0a0a] sm:text-[1.65rem]">
-              Everything you need for serious documents.
+        <section className="border-y border-[#e7e5e4] bg-[#f5f4f1] px-6 py-14 sm:px-10">
+          <div className="mx-auto max-w-6xl">
+            <p className="text-center font-landing-serif text-lg text-[#0c0c0c] sm:text-xl">
+              The editor
             </p>
-            <ul className="mt-14 grid gap-12 sm:grid-cols-3 sm:gap-10">
-              <li className="max-w-sm">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full border border-[#e0dbd3] bg-[#f7f5f2] text-[#2d2a26]">
-                  <IconSparkles />
-                </div>
-                <h3 className="mt-5 text-sm font-semibold text-[#0a0a0a]">Assistant panel</h3>
-                <p className="mt-2 text-[15px] leading-relaxed text-[#555046]">
-                  Context blocks, selection-aware edits, and tools for grammar, structure, math, and
-                  research-style formatting.
-                </p>
+            <p className="mx-auto mt-2 max-w-2xl text-center text-sm leading-relaxed text-[#57534e]">
+              Math in the page, charts in place, and the assistant panel—same layout you use for real papers and reports.
+            </p>
+            <div className="relative mt-10 overflow-hidden rounded-2xl border border-[#e7e5e4] bg-[#1c1917] shadow-[0_24px_80px_-20px_rgba(0,0,0,0.35)] ring-1 ring-black/5">
+              <div className="relative aspect-[1920/1000] w-full sm:aspect-[16/9]">
+                <Image
+                  src="/landing-editor.png"
+                  alt="DocTex document editor with formatting toolbar, mathematical content, figures, and AI assistant sidebar"
+                  fill
+                  className="object-cover object-top"
+                  sizes="(max-width: 1152px) 100vw, 1152px"
+                  priority
+                />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="mx-auto max-w-6xl px-6 py-20 sm:px-10">
+          <div className="max-w-xl">
+            <h2 className="font-landing-serif text-2xl font-normal text-[#0c0c0c] sm:text-[1.75rem]">
+              Agents that stay on task
+            </h2>
+            <p className="mt-3 text-[15px] leading-relaxed text-[#57534e]">
+              Slash-commands and one-click tools route the model with tight instructions—so you get structured HTML
+              back, not a chat essay. Use them on a highlight or the whole document.
+            </p>
+          </div>
+          <ul className="mt-12 grid gap-10 sm:grid-cols-2 sm:gap-x-16 sm:gap-y-12">
+            {agents.map((a) => (
+              <li key={a.name}>
+                <h3 className="text-sm font-semibold text-[#0c0c0c]">{a.name}</h3>
+                <p className="mt-2 text-[15px] leading-relaxed text-[#57534e]">{a.blurb}</p>
               </li>
-              <li className="max-w-sm">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full border border-[#e0dbd3] bg-[#f7f5f2] text-[#2d2a26]">
-                  <IconFileUp />
-                </div>
-                <h3 className="mt-5 text-sm font-semibold text-[#0a0a0a]">Word in and out</h3>
-                <p className="mt-2 text-[15px] leading-relaxed text-[#555046]">
-                  Bring in .docx files and export to HTML, Word, or PDF with your page layout in
-                  mind.
-                </p>
-              </li>
-              <li className="max-w-sm">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full border border-[#e0dbd3] bg-[#f7f5f2] text-[#2d2a26]">
-                  <IconFileText />
-                </div>
-                <h3 className="mt-5 text-sm font-semibold text-[#0a0a0a]">Rich editing</h3>
-                <p className="mt-2 text-[15px] leading-relaxed text-[#555046]">
-                  Tables, links, typography, equations with KaTeX — tuned for long-form work.
-                </p>
-              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="border-t border-[#e7e5e4] bg-white px-6 py-20 sm:px-10">
+          <div className="mx-auto max-w-6xl">
+            <h2 className="font-landing-serif text-2xl font-normal text-[#0c0c0c] sm:text-[1.75rem]">
+              What you get
+            </h2>
+            <ul className="mt-10 grid gap-4 sm:grid-cols-2 sm:gap-x-16 sm:gap-y-4">
+              {capabilities.map((line) => (
+                <li key={line} className="flex gap-3 text-[15px] leading-snug text-[#44403c]">
+                  <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-[#0c0c0c]" aria-hidden />
+                  <span>{line}</span>
+                </li>
+              ))}
             </ul>
           </div>
         </section>
 
-        <section className="border-t border-[#e5e0d8] px-5 py-24 sm:px-8">
-          <div className="mx-auto max-w-5xl text-center">
-            <p className="font-landing-serif text-2xl font-normal text-[#0a0a0a] sm:text-[1.75rem]">
-              Ready when you are.
-            </p>
-            <Link
-              href="/editor"
-              className="mt-8 inline-flex items-center justify-center rounded-full border border-[#cfc9be] bg-transparent px-7 py-3.5 text-sm font-medium text-[#0a0a0a] transition hover:border-[#b0aaa0] hover:bg-[#f0ede7]"
-            >
-              Open the editor
-            </Link>
-          </div>
+        <section className="mx-auto max-w-6xl px-6 py-24 text-center sm:px-10">
+          <p className="font-landing-serif text-2xl font-normal text-[#0c0c0c] sm:text-[1.85rem]">
+            Try the editor
+          </p>
+          <Link
+            href="/editor"
+            className="mt-8 inline-flex items-center justify-center rounded-full border border-[#d6d3d1] bg-transparent px-7 py-3.5 text-sm font-medium text-[#0c0c0c] transition hover:border-[#a8a29e] hover:bg-[#faf9f7]"
+          >
+            Open DocTex
+          </Link>
         </section>
 
-        <footer className="border-t border-[#e5e0d8] px-5 py-10 sm:px-8">
-          <div className="mx-auto flex max-w-5xl flex-col items-start justify-between gap-4 text-sm text-[#6b6358] sm:flex-row sm:items-center">
-            <span>DocTex</span>
-            <span className="text-[13px]">Focused writing in the browser.</span>
+        <footer className="border-t border-[#e7e5e4] px-6 py-10 sm:px-10">
+          <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-3 text-sm text-[#78716c] sm:flex-row sm:items-center">
+            <span className="font-medium text-[#44403c]">DocTex</span>
+            <span className="text-[13px]">Serious documents, minimal friction.</span>
           </div>
         </footer>
       </main>
