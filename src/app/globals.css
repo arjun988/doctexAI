@@ -1,0 +1,70 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --editor-page-bg: #fafafa;
+  --editor-text: #1a1a1a;
+}
+
+body {
+  @apply bg-surface text-zinc-100 antialiased;
+}
+
+/* TipTap content area — light page like Word/Docs */
+.tiptap-editor .ProseMirror {
+  @apply min-h-[calc(100vh-12rem)] outline-none text-zinc-900;
+  font-family: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+  font-size: 1.0625rem;
+  line-height: 1.75;
+}
+
+.tiptap-editor .ProseMirror p {
+  @apply mb-4;
+}
+
+.tiptap-editor .ProseMirror h1 {
+  @apply text-3xl font-bold mb-4 mt-8;
+}
+
+.tiptap-editor .ProseMirror h2 {
+  @apply text-2xl font-semibold mb-3 mt-6;
+}
+
+.tiptap-editor .ProseMirror h3 {
+  @apply text-xl font-semibold mb-2 mt-4;
+}
+
+.tiptap-editor .ProseMirror ul,
+.tiptap-editor .ProseMirror ol {
+  @apply pl-6 mb-4;
+}
+
+.tiptap-editor .ProseMirror blockquote {
+  @apply border-l-4 border-zinc-300 pl-4 italic text-zinc-700 my-4;
+}
+
+.tiptap-editor .ProseMirror code {
+  @apply bg-zinc-100 px-1.5 py-0.5 rounded text-sm font-mono text-zinc-800;
+}
+
+.tiptap-editor .ProseMirror pre {
+  @apply bg-zinc-100 p-4 rounded-lg my-4 overflow-x-auto;
+}
+
+.tiptap-editor .ProseMirror pre code {
+  @apply bg-transparent p-0;
+}
+
+.tiptap-editor .ProseMirror a {
+  @apply text-blue-600 underline;
+}
+
+.tiptap-editor .ProseMirror:focus {
+  @apply outline-none;
+}
+
+.tiptap-editor .ProseMirror p.is-editor-empty:first-child::before {
+  @apply text-zinc-400 float-left h-0 pointer-events-none;
+  content: attr(data-placeholder);
+}
