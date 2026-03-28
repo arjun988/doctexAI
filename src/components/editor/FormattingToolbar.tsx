@@ -1,7 +1,8 @@
 "use client";
 
 import type { Editor } from "@tiptap/core";
-import { useEffect, useReducer } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
+import { LinkUrlDialog, TableInsertDialog } from "@/components/editor/EditorDialogs";
 import {
   AlignCenter,
   AlignJustify,
@@ -10,8 +11,9 @@ import {
   Baseline,
   BetweenHorizontalStart,
   ChevronDown,
+  Columns2,
   Highlighter,
-  Image as ImageIcon,
+  ImagePlus,
   IndentDecrease,
   IndentIncrease,
   LayoutTemplate,
@@ -24,10 +26,12 @@ import {
   Palette,
   Pilcrow,
   RemoveFormatting,
+  Rows2,
   Strikethrough as StrikethroughIcon,
   Subscript as SubIcon,
   Superscript as SupIcon,
   Table2,
+  Trash2,
   Type,
   Underline,
 } from "lucide-react";
@@ -123,6 +127,13 @@ function Sep() {
   return <div className="mx-1 h-6 w-px shrink-0 bg-zinc-300 dark:bg-zinc-700" aria-hidden />;
 }
 
+const tableLayoutBtn =
+  "inline-flex items-center justify-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-zinc-800 shadow-sm transition hover:bg-zinc-50 active:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-900/80 dark:text-zinc-100 dark:hover:bg-zinc-800";
+
+function preventMouseDown(e: React.MouseEvent) {
+  e.preventDefault();
+}
+
 function textAlignValue(editor: Editor): string | null | undefined {
   if (editor.isActive("heading")) return editor.getAttributes("heading").textAlign;
   return editor.getAttributes("paragraph").textAlign;
@@ -130,8 +141,12 @@ function textAlignValue(editor: Editor): string | null | undefined {
 
 export function FormattingToolbar({ editor, onOpenPageSetup }: Props) {
   useEditorRerender(editor);
+  const imageFileRef = useRef<HTMLInputElement>(null);
+  const [tableDialogOpen, setTableDialogOpen] = useState(false);
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false);
 
   const ta = textAlignValue(editor);
+  const inTable = editor.isActive("table");
 
   const p = editor.getAttributes("paragraph") as {
     indent?: number;
@@ -140,8 +155,28 @@ export function FormattingToolbar({ editor, onOpenPageSetup }: Props) {
     marginBottom?: string | null;
   };
 
+  function onPickImageFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !file.type.startsWith("image/")) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const src = typeof reader.result === "string" ? reader.result : "";
+      if (src) editor.chain().focus().setImage({ src }).run();
+    };
+    reader.readAsDataURL(file);
+  }
+
   return (
     <div className="w-full shrink-0 border-b border-zinc-200 bg-white/95 px-2 py-1.5 backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/95">
+      <input
+        ref={imageFileRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        aria-hidden
+        onChange={onPickImageFile}
+      />
       <div className="flex flex-wrap items-center gap-0.5">
         {onOpenPageSetup && (
           <>
@@ -487,35 +522,17 @@ export function FormattingToolbar({ editor, onOpenPageSetup }: Props) {
         <Btn
           title="Insert link"
           active={editor.isActive("link")}
-          onClick={() => {
-            const prev = editor.getAttributes("link").href as string | undefined;
-            const url = typeof window !== "undefined" ? window.prompt("Link URL", prev || "https://") : null;
-            if (url === null) return;
-            if (url === "") {
-              editor.chain().focus().unsetLink().run();
-              return;
-            }
-            editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
-          }}
+          onClick={() => setLinkDialogOpen(true)}
         >
           <Link2 className="h-3.5 w-3.5" />
         </Btn>
         <Btn
-          title="Insert image"
-          onClick={() => {
-            const url = typeof window !== "undefined" ? window.prompt("Image URL", "https://") : null;
-            if (!url) return;
-            editor.chain().focus().setImage({ src: url }).run();
-          }}
+          title="Insert image from file"
+          onClick={() => imageFileRef.current?.click()}
         >
-          <ImageIcon className="h-3.5 w-3.5" />
+          <ImagePlus className="h-3.5 w-3.5" />
         </Btn>
-        <Btn
-          title="Insert table (3×3)"
-          onClick={() =>
-            editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
-          }
-        >
+        <Btn title="Insert table — choose rows & columns" onClick={() => setTableDialogOpen(true)}>
           <Table2 className="h-3.5 w-3.5" />
         </Btn>
         <Btn title="Horizontal line" onClick={() => editor.chain().focus().setHorizontalRule().run()}>
@@ -525,6 +542,134 @@ export function FormattingToolbar({ editor, onOpenPageSetup }: Props) {
           <BetweenHorizontalStart className="h-3.5 w-3.5" />
         </Btn>
       </div>
+
+      <TableInsertDialog
+        open={tableDialogOpen}
+        onClose={() => setTableDialogOpen(false)}
+        onInsert={(rows, cols) => {
+          editor.chain().focus().insertTable({ rows, cols, withHeaderRow: true }).run();
+        }}
+      />
+      <LinkUrlDialog
+        open={linkDialogOpen}
+        onClose={() => setLinkDialogOpen(false)}
+        initialUrl={(editor.getAttributes("link").href as string | undefined) ?? ""}
+        onApply={(url) => {
+          if (url === "") {
+            editor.chain().focus().unsetLink().run();
+            return;
+          }
+          editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
+        }}
+      />
+
+      {inTable && (
+        <div
+          className="mt-2 rounded-lg border border-zinc-200 bg-zinc-50/90 px-3 py-2.5 dark:border-zinc-600 dark:bg-zinc-900/40"
+          role="toolbar"
+          aria-label="Table layout"
+        >
+          <div className="mb-2 flex items-center gap-2">
+            <Table2 className="h-3.5 w-3.5 text-zinc-500 dark:text-zinc-400" aria-hidden />
+            <span className="text-[11px] font-semibold text-zinc-800 dark:text-zinc-200">
+              Table layout
+            </span>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-start sm:gap-2">
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                <Rows2 className="h-3 w-3" aria-hidden />
+                Rows
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  title="Insert a row above the current row"
+                  className={tableLayoutBtn}
+                  onMouseDown={preventMouseDown}
+                  onClick={() => editor.chain().focus().addRowBefore().run()}
+                >
+                  Insert above
+                </button>
+                <button
+                  type="button"
+                  title="Insert a row below the current row"
+                  className={tableLayoutBtn}
+                  onMouseDown={preventMouseDown}
+                  onClick={() => editor.chain().focus().addRowAfter().run()}
+                >
+                  Insert below
+                </button>
+              </div>
+            </div>
+            <div
+              className="hidden h-full min-h-[3rem] w-px shrink-0 self-stretch bg-zinc-200 dark:bg-zinc-600 sm:block"
+              aria-hidden
+            />
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                <Columns2 className="h-3 w-3" aria-hidden />
+                Columns
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  title="Insert a column to the left"
+                  className={tableLayoutBtn}
+                  onMouseDown={preventMouseDown}
+                  onClick={() => editor.chain().focus().addColumnBefore().run()}
+                >
+                  Insert left
+                </button>
+                <button
+                  type="button"
+                  title="Insert a column to the right"
+                  className={tableLayoutBtn}
+                  onMouseDown={preventMouseDown}
+                  onClick={() => editor.chain().focus().addColumnAfter().run()}
+                >
+                  Insert right
+                </button>
+              </div>
+            </div>
+          </div>
+          <div className="mt-3 border-t border-zinc-200 pt-2.5 dark:border-zinc-600">
+            <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+              Delete
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                title="Delete the current row"
+                className={tableLayoutBtn}
+                onMouseDown={preventMouseDown}
+                onClick={() => editor.chain().focus().deleteRow().run()}
+              >
+                Delete row
+              </button>
+              <button
+                type="button"
+                title="Delete the current column"
+                className={tableLayoutBtn}
+                onMouseDown={preventMouseDown}
+                onClick={() => editor.chain().focus().deleteColumn().run()}
+              >
+                Delete column
+              </button>
+              <button
+                type="button"
+                title="Delete the entire table"
+                className={`${tableLayoutBtn} border-red-200 text-red-800 hover:bg-red-50 dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-950/30`}
+                onMouseDown={preventMouseDown}
+                onClick={() => editor.chain().focus().deleteTable().run()}
+              >
+                <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                Delete table
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
