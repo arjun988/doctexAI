@@ -4,25 +4,47 @@ import { useCallback, useRef, useState } from "react";
 import type { AiSettings } from "@/lib/settings";
 import { streamAiChat, type ChatMessage } from "@/lib/ai";
 import {
-  CornerDownLeft,
   Copy,
+  GripVertical,
   Loader2,
   Send,
   Sparkles,
+  TextSelect,
   X,
 } from "lucide-react";
+
+type ContextBlock = {
+  id: string;
+  text: string;
+  source: "paste" | "selection";
+};
 
 type Props = {
   settings: AiSettings;
   getDocumentHtml: () => string;
   getSelectionText: () => string;
-  insertAtCursor: (text: string) => void;
+  getSelectionRange: () => { from: number; to: number } | null;
+  applyAiHtml: (
+    html: string,
+    target: { type: "document" } | { type: "range"; from: number; to: number }
+  ) => void;
 };
+
+const NO_APPLY = /^\s*NO_APPLY:\s*([\s\S]*)$/i;
 
 const SYSTEM: ChatMessage = {
   role: "system",
-  content:
-    "You are an expert writing assistant inside a document editor. Help revise, expand, summarize, or rewrite based on the user's instruction. Be concise unless asked for detail. You may return plain text or minimal HTML fragments (<p>, <strong>, etc.) when appropriate.",
+  content: `You are an expert writing assistant inside a TipTap/HTML document editor.
+
+When the user wants the document changed (rewrite, edit, fix, translate, format, expand, shorten):
+- Output ONLY the replacement as HTML (e.g. <p>, <strong>, <ul>, <li>) or plain text lines (they will be wrapped as paragraphs). No markdown code fences unless you need to wrap raw HTML.
+- Do not add conversational preambles ("Here is…", "Sure!").
+- If editing a **selected passage** only, output the fragment that replaces that selection—nothing else.
+- If editing the **whole document** (no selection), output the full document body as HTML.
+
+If the user asks a **pure question** that must NOT change the document (definitions, explanations, "what does X mean"), respond with exactly this format on the first line:
+NO_APPLY:
+Then your answer below. Do not output document HTML in that case.`,
 };
 
 const QUICK_PROMPTS = [
@@ -32,14 +54,22 @@ const QUICK_PROMPTS = [
   "Make the selection more concise",
 ] as const;
 
+function newBlockId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `ctx-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
 export function PromptPanel({
   settings,
   getDocumentHtml,
   getSelectionText,
-  insertAtCursor,
+  getSelectionRange,
+  applyAiHtml,
 }: Props) {
   const [input, setInput] = useState("");
-  /** User/assistant only — for display and for building API history */
+  const [contextBlocks, setContextBlocks] = useState<ContextBlock[]>([]);
   const [turns, setTurns] = useState<ChatMessage[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,12 +82,35 @@ export function PromptPanel({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
 
+  const addSelectionAsContext = useCallback(() => {
+    const t = getSelectionText().trim();
+    if (!t) return;
+    setContextBlocks((prev) => [
+      ...prev,
+      { id: newBlockId(), text: t, source: "selection" },
+    ]);
+  }, [getSelectionText]);
+
+  const onPasteComposer = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const ne = e.nativeEvent as Event & { shiftKey?: boolean };
+    if (ne.shiftKey) return;
+    const text = e.clipboardData.getData("text/plain");
+    if (!text?.trim()) return;
+    e.preventDefault();
+    setContextBlocks((prev) => [
+      ...prev,
+      { id: newBlockId(), text: text.trim(), source: "paste" },
+    ]);
+  }, []);
+
   const send = useCallback(async () => {
     const trimmed = input.trim();
     if (!trimmed || streaming) return;
 
     setError(null);
-    const selection = getSelectionText().trim();
+    const selectionRange =
+      useSelection ? getSelectionRange() : null;
+    const selectionText = getSelectionText().trim();
     const docSnippet = getDocumentHtml();
     const prior =
       turns.length > 0
@@ -67,25 +120,41 @@ export function PromptPanel({
         : "";
 
     const contextParts: string[] = [];
-    if (useSelection && selection) {
-      contextParts.push(`### Selected text\n${selection}`);
+    if (contextBlocks.length > 0) {
+      contextBlocks.forEach((b, i) => {
+        const label = b.source === "paste" ? "Pasted context" : "Context from selection";
+        contextParts.push(`### ${label} (${i + 1})\n${b.text}`);
+      });
+    }
+    if (useSelection && selectionText && selectionRange) {
+      contextParts.push(`### Active editor selection (plain text)\n${selectionText}`);
     }
     contextParts.push(`### Document (HTML)\n${docSnippet.slice(0, 120_000)}`);
     if (prior) {
       contextParts.push(`### Prior conversation\n${prior}`);
     }
-    contextParts.push(`### Instruction\n${trimmed}`);
+    const applyHint =
+      selectionRange && useSelection
+        ? "Apply target: **selection** — output only the replacement HTML for the selected range."
+        : "Apply target: **full document** — output the full document body as HTML.";
+    contextParts.push(`### Instruction\n${trimmed}\n\n${applyHint}`);
 
     const userPayload = contextParts.join("\n\n");
     const apiMessages: ChatMessage[] = [SYSTEM, { role: "user", content: userPayload }];
 
     setTurns((prev) => [...prev, { role: "user", content: trimmed }]);
     setInput("");
+    setContextBlocks([]);
     setStreaming(true);
 
     let assistant = "";
     setTurns((prev) => [...prev, { role: "assistant", content: "" }]);
     queueMicrotask(() => scrollDown());
+
+    const applyTarget =
+      selectionRange && useSelection
+        ? ({ type: "range" as const, from: selectionRange.from, to: selectionRange.to } as const)
+        : ({ type: "document" as const } as const);
 
     try {
       await streamAiChat(settings, apiMessages, (delta) => {
@@ -100,6 +169,21 @@ export function PromptPanel({
         });
         requestAnimationFrame(() => scrollDown());
       });
+
+      const noApplyMatch = assistant.match(NO_APPLY);
+      if (noApplyMatch) {
+        const answer = noApplyMatch[1].trim();
+        setTurns((prev) => {
+          const copy = [...prev];
+          const last = copy[copy.length - 1];
+          if (last?.role === "assistant") {
+            copy[copy.length - 1] = { ...last, content: answer };
+          }
+          return copy;
+        });
+      } else {
+        applyAiHtml(assistant, applyTarget);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Request failed");
       setTurns((prev) => prev.slice(0, -2));
@@ -114,8 +198,11 @@ export function PromptPanel({
     settings,
     getDocumentHtml,
     getSelectionText,
+    getSelectionRange,
     useSelection,
+    contextBlocks,
     scrollDown,
+    applyAiHtml,
   ]);
 
   const lastAssistant =
@@ -140,7 +227,6 @@ export function PromptPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col border-l border-zinc-200 bg-gradient-to-b from-white to-zinc-50/80 dark:border-surface-border dark:from-surface dark:to-surface-raised">
-      {/* Header */}
       <div className="flex shrink-0 items-start gap-2 border-b border-zinc-200/90 px-3 py-2.5 dark:border-surface-border">
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent/10 text-accent dark:bg-accent/15">
           <Sparkles className="h-4 w-4" aria-hidden />
@@ -150,7 +236,7 @@ export function PromptPanel({
             Assistant
           </h2>
           <p className="mt-0.5 text-[11px] leading-snug text-zinc-500 dark:text-zinc-500">
-            Uses your document each turn. Add an API key in Settings.
+            Replies apply to the document. Paste adds context blocks. Add an API key in Settings.
           </p>
         </div>
         {turns.length > 0 && (
@@ -166,7 +252,6 @@ export function PromptPanel({
         )}
       </div>
 
-      {/* Messages */}
       <div
         className="min-h-0 flex-1 overflow-y-auto px-3 py-3"
         role="log"
@@ -176,11 +261,15 @@ export function PromptPanel({
         {turns.length === 0 && (
           <div className="rounded-xl border border-dashed border-zinc-200/90 bg-zinc-50/50 p-3 dark:border-surface-border dark:bg-surface-overlay/40">
             <p className="text-xs font-medium text-zinc-800 dark:text-zinc-200">
-              Start with a prompt
+              Cursor-style context
             </p>
             <p className="mt-1 text-[11px] leading-relaxed text-zinc-600 dark:text-zinc-500">
-              Selection is included when it&apos;s turned on and you have text
-              selected. Shift+Enter for a new line.
+              <strong className="font-medium text-zinc-700 dark:text-zinc-400">Paste</strong> into
+              the box below to attach text as context (not into the prompt). Use{" "}
+              <strong className="font-medium text-zinc-700 dark:text-zinc-400">Add selection</strong>{" "}
+              for the current highlight. Turn on editor selection to replace the selection when you
+              send; otherwise the model updates the full document. Questions: it answers without
+              changing the doc when appropriate.
             </p>
             <div className="mt-3 flex flex-wrap gap-1.5">
               {QUICK_PROMPTS.map((label) => (
@@ -259,33 +348,82 @@ export function PromptPanel({
         </div>
       )}
 
-      {/* Composer */}
       <div className="shrink-0 space-y-2 border-t border-zinc-200/90 bg-white/90 p-3 backdrop-blur-sm dark:border-surface-border dark:bg-surface-raised/95">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-500">
-            Context
-          </span>
+        {contextBlocks.length > 0 && (
+          <div className="space-y-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-600">
+              Context
+            </span>
+            <ul className="max-h-32 space-y-1.5 overflow-y-auto">
+              {contextBlocks.map((b) => (
+                <li
+                  key={b.id}
+                  className="group flex items-start gap-2 rounded-lg border border-zinc-200/90 bg-zinc-50/90 px-2 py-1.5 dark:border-surface-border dark:bg-surface-overlay/80"
+                >
+                  <GripVertical
+                    className="mt-0.5 h-3.5 w-3.5 shrink-0 text-zinc-400"
+                    aria-hidden
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[10px] font-medium text-accent dark:text-blue-400">
+                      {b.source === "paste" ? "Pasted" : "From selection"}
+                    </div>
+                    <p className="line-clamp-3 text-[11px] leading-snug text-zinc-700 dark:text-zinc-300">
+                      {b.text}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setContextBlocks((prev) => prev.filter((x) => x.id !== b.id))
+                    }
+                    className="shrink-0 rounded p-1 text-zinc-400 opacity-0 transition hover:bg-zinc-200 hover:text-zinc-700 group-hover:opacity-100 dark:hover:bg-surface-raised dark:hover:text-zinc-200"
+                    aria-label="Remove context"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            role="switch"
-            aria-checked={useSelection}
-            aria-label="Include selection when non-empty"
-            onClick={() => setUseSelection((v) => !v)}
-            className={`relative inline-flex h-6 w-10 shrink-0 rounded-full transition-colors focus-visible:outline focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-surface-raised ${
-              useSelection ? "bg-accent" : "bg-zinc-200 dark:bg-zinc-700"
-            }`}
+            onClick={addSelectionAsContext}
+            disabled={streaming || !getSelectionText().trim()}
+            className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 px-2 py-1 text-[11px] font-medium text-zinc-700 transition hover:bg-zinc-100 disabled:opacity-40 dark:border-surface-border dark:text-zinc-300 dark:hover:bg-surface-overlay"
           >
-            <span
-              className={`pointer-events-none inline-block h-5 w-5 translate-y-0.5 rounded-full bg-white shadow transition-transform ${
-                useSelection ? "translate-x-5" : "translate-x-0.5"
-              }`}
-            />
+            <TextSelect className="h-3.5 w-3.5" />
+            Add selection
           </button>
+          <div className="ml-auto flex items-center gap-2">
+            <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-500">
+              Replace selection
+            </span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={useSelection}
+              aria-label="When on, AI replaces the current selection; when off, full document"
+              onClick={() => setUseSelection((v) => !v)}
+              className={`relative inline-flex h-6 w-10 shrink-0 rounded-full transition-colors focus-visible:outline focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-surface-raised ${
+                useSelection ? "bg-accent" : "bg-zinc-200 dark:bg-zinc-700"
+              }`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-5 w-5 translate-y-0.5 rounded-full bg-white shadow transition-transform ${
+                  useSelection ? "translate-x-5" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+          </div>
         </div>
         <p className="text-[10px] leading-snug text-zinc-500 dark:text-zinc-600">
           {useSelection
-            ? "Include current selection when it’s not empty."
-            : "Selection ignored — full document only."}
+            ? "With a selection in the editor, the reply replaces that range. Paste in the box adds context only."
+            : "Full document will be replaced by the model output (unless the reply is a chat-only answer)."}
         </p>
 
         <div className="relative">
@@ -293,13 +431,14 @@ export function PromptPanel({
             ref={textareaRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onPaste={onPasteComposer}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 void send();
               }
             }}
-            placeholder="Ask for edits, a summary, or a rewrite…"
+            placeholder="Instruction… (paste here attaches context, not text in the prompt)"
             rows={3}
             disabled={streaming}
             className="min-h-[80px] w-full resize-none rounded-xl border border-zinc-200 bg-zinc-50/80 px-3 py-2.5 pr-12 text-sm text-zinc-900 shadow-inner placeholder:text-zinc-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/25 disabled:opacity-60 dark:border-surface-border dark:bg-surface-overlay dark:text-zinc-100 dark:placeholder:text-zinc-600 dark:focus:ring-accent/20"
@@ -321,29 +460,18 @@ export function PromptPanel({
         </div>
 
         <p className="text-center text-[10px] text-zinc-400 dark:text-zinc-600">
-          Enter to send · Shift+Enter new line
+          Enter to send · Shift+Enter new line · Paste = context (Shift+paste = into message)
         </p>
 
-        <div className="flex gap-2">
-          <button
-            type="button"
-            disabled={!lastAssistant.trim() || streaming}
-            onClick={() => void copyLastReply()}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-zinc-200 py-2 text-[11px] font-medium text-zinc-700 transition hover:bg-zinc-100 disabled:opacity-40 dark:border-surface-border dark:text-zinc-300 dark:hover:bg-surface-overlay"
-          >
-            <Copy className="h-3.5 w-3.5" />
-            {copied ? "Copied" : "Copy reply"}
-          </button>
-          <button
-            type="button"
-            disabled={!lastAssistant.trim() || streaming}
-            onClick={() => insertAtCursor(lastAssistant)}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-accent/30 bg-accent/10 py-2 text-[11px] font-medium text-accent transition hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-40 dark:border-accent/40 dark:bg-accent/15 dark:hover:bg-accent/25"
-          >
-            <CornerDownLeft className="h-3.5 w-3.5" />
-            Insert at cursor
-          </button>
-        </div>
+        <button
+          type="button"
+          disabled={!lastAssistant.trim() || streaming}
+          onClick={() => void copyLastReply()}
+          className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-zinc-200 py-2 text-[11px] font-medium text-zinc-700 transition hover:bg-zinc-100 disabled:opacity-40 dark:border-surface-border dark:text-zinc-300 dark:hover:bg-surface-overlay"
+        >
+          <Copy className="h-3.5 w-3.5" />
+          {copied ? "Copied" : "Copy last reply"}
+        </button>
       </div>
     </div>
   );

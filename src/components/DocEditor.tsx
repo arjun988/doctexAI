@@ -2,17 +2,29 @@
 
 import { useEditor, EditorContent, type Editor } from "@tiptap/react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
+import { normalizeAiOutput } from "@/lib/aiDocumentApply";
 import { loadDocumentHtml, saveDocumentHtml } from "@/lib/settings";
 import type { DocumentLayout } from "@/lib/documentLayout";
 import { createEditorExtensions } from "@/tiptap-extensions/editorExtensions";
 import { FormattingToolbar } from "@/components/editor/FormattingToolbar";
 import { SelectionBubbleMenu } from "@/components/editor/SelectionBubbleMenu";
 
+export type SelectionRange = { from: number; to: number };
+
 export type EditorApi = {
   getHtml: () => string;
   setHtml: (html: string) => void;
   getSelectionText: () => string;
+  /** Current selection range, or null if caret only. */
+  getSelectionRange: () => SelectionRange | null;
   insertAtCursor: (text: string) => void;
+  /**
+   * Replace the whole document or a character range with parsed HTML (TipTap).
+   */
+  applyAiHtml: (
+    html: string,
+    target: { type: "document" } | { type: "range"; from: number; to: number }
+  ) => void;
 };
 
 type Props = {
@@ -73,6 +85,29 @@ export function DocEditor({ className, layout, onOpenPageSetup, onReady }: Props
     if (from === to) return "";
     return ed.state.doc.textBetween(from, to, " ");
   }, []);
+  const getSelectionRange = useCallback((): SelectionRange | null => {
+    const ed = editorRef.current;
+    if (!ed) return null;
+    const { from, to } = ed.state.selection;
+    if (from === to) return null;
+    return { from, to };
+  }, []);
+  const applyAiHtml = useCallback(
+    (
+      html: string,
+      target: { type: "document" } | { type: "range"; from: number; to: number }
+    ) => {
+      const ed = editorRef.current;
+      if (!ed) return;
+      const normalized = normalizeAiOutput(html);
+      if (target.type === "document") {
+        ed.chain().focus().setContent(normalized).run();
+        return;
+      }
+      ed.chain().focus().insertContentAt({ from: target.from, to: target.to }, normalized).run();
+    },
+    []
+  );
   const insertAtCursor = useCallback((text: string) => {
     const ed = editorRef.current;
     if (!ed) return;
@@ -81,8 +116,8 @@ export function DocEditor({ className, layout, onOpenPageSetup, onReady }: Props
 
   useEffect(() => {
     if (!editor || !onReady) return;
-    onReady({ getHtml, setHtml, getSelectionText, insertAtCursor });
-  }, [editor, onReady, getHtml, setHtml, getSelectionText, insertAtCursor]);
+    onReady({ getHtml, setHtml, getSelectionText, getSelectionRange, insertAtCursor, applyAiHtml });
+  }, [editor, onReady, getHtml, setHtml, getSelectionText, getSelectionRange, insertAtCursor, applyAiHtml]);
 
   if (!editor) {
     return (
