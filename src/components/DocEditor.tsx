@@ -1,11 +1,12 @@
 "use client";
 
 import { useEditor, EditorContent, type Editor } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
-import Placeholder from "@tiptap/extension-placeholder";
-import Link from "@tiptap/extension-link";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { loadDocumentHtml, saveDocumentHtml } from "@/lib/settings";
+import type { DocumentLayout } from "@/lib/documentLayout";
+import { createEditorExtensions } from "@/tiptap-extensions/editorExtensions";
+import { FormattingToolbar } from "@/components/editor/FormattingToolbar";
+import { SelectionBubbleMenu } from "@/components/editor/SelectionBubbleMenu";
 
 export type EditorApi = {
   getHtml: () => string;
@@ -16,30 +17,29 @@ export type EditorApi = {
 
 type Props = {
   className?: string;
+  layout: DocumentLayout;
+  onOpenPageSetup?: () => void;
   onReady?: (api: EditorApi) => void;
 };
 
-export function DocEditor({ className, onReady }: Props) {
+export function DocEditor({ className, layout, onOpenPageSetup, onReady }: Props) {
   const editorRef = useRef<Editor | null>(null);
 
-  const editor = useEditor({
-    extensions: [
-      StarterKit.configure({
-        heading: { levels: [1, 2, 3] },
-      }),
-      Placeholder.configure({
-        placeholder: "Start writing, or import a .docx file…",
-      }),
-      Link.configure({ openOnClick: true, autolink: true }),
-    ],
-    content: "",
-    editorProps: {
-      attributes: {
-        class: "prose prose-zinc max-w-none",
+  const editorOptions = useMemo(
+    () => ({
+      extensions: createEditorExtensions("Start writing, or import a .docx file…"),
+      content: "",
+      editorProps: {
+        attributes: {
+          class: "doc-prose-mirror",
+        },
       },
-    },
-    immediatelyRender: false,
-  });
+      immediatelyRender: false as const,
+    }),
+    []
+  );
+
+  const editor = useEditor(editorOptions, []);
 
   editorRef.current = editor;
 
@@ -92,9 +92,48 @@ export function DocEditor({ className, onReady }: Props) {
     );
   }
 
+  const sheetPad = {
+    paddingTop: layout.marginTop,
+    paddingBottom: layout.marginBottom,
+    paddingLeft: layout.marginLeft,
+    paddingRight: layout.marginRight,
+  };
+
+  const showHeader = layout.headerText.trim().length > 0;
+  const showFooter = layout.footerText.trim().length > 0;
+
   return (
-    <div className={className}>
-      <EditorContent editor={editor} className="tiptap-editor" />
+    <div className={`flex min-h-0 w-full flex-1 flex-col ${className ?? ""}`}>
+      <FormattingToolbar editor={editor} onOpenPageSetup={onOpenPageSetup} />
+      <SelectionBubbleMenu editor={editor} />
+      <div className="doc-page-scroll min-h-0 w-full flex-1 overflow-y-auto">
+        <div
+          className={`doc-page-sheet w-full min-h-full ${
+            layout.orientation === "landscape" ? "doc-page-sheet--landscape" : "doc-page-sheet--portrait"
+          }`}
+          style={sheetPad}
+        >
+          {showHeader && (
+            <header className="doc-zone-header mb-3 border-b border-zinc-200 pb-2 text-center text-[11pt] text-zinc-500 whitespace-pre-wrap">
+              {layout.headerText}
+            </header>
+          )}
+          <div
+            className="doc-column-body min-h-[12rem]"
+            style={{
+              columnCount: layout.columns,
+              columnGap: layout.columns > 1 ? "1.25em" : undefined,
+            }}
+          >
+            <EditorContent editor={editor} className="tiptap-editor" />
+          </div>
+          {showFooter && (
+            <footer className="doc-zone-footer mt-3 border-t border-zinc-200 pt-2 text-center text-[11pt] text-zinc-500 whitespace-pre-wrap">
+              {layout.footerText}
+            </footer>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

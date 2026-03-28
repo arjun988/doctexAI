@@ -11,60 +11,169 @@ body {
   @apply bg-surface text-zinc-100 antialiased;
 }
 
-/* TipTap content area — light page like Word/Docs */
-.tiptap-editor .ProseMirror {
-  @apply min-h-[calc(100vh-12rem)] outline-none text-zinc-900;
-  font-family: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
-  font-size: 1.0625rem;
-  line-height: 1.75;
+.doc-page-scroll {
+  width: 100%;
+  min-height: 0;
+  flex: 1;
+  background: linear-gradient(180deg, #52525b 0%, #3f3f46 100%);
+  padding: 10px 8px 28px;
+  box-sizing: border-box;
 }
 
-.tiptap-editor .ProseMirror p {
-  @apply mb-4;
+.doc-page-sheet {
+  width: 100%;
+  max-width: 100%;
+  min-height: 100%;
+  margin: 0;
+  background: #fff;
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.12),
+    0 8px 24px rgba(0, 0, 0, 0.08);
+  box-sizing: border-box;
 }
 
-.tiptap-editor .ProseMirror h1 {
-  @apply text-3xl font-bold mb-4 mt-8;
+.doc-page-sheet--portrait {
+  min-height: min(297mm, calc(100vh - 200px));
 }
 
-.tiptap-editor .ProseMirror h2 {
-  @apply text-2xl font-semibold mb-3 mt-6;
+.doc-page-sheet--landscape {
+  min-height: min(210mm, calc(100vh - 200px));
 }
 
-.tiptap-editor .ProseMirror h3 {
+.doc-column-body {
+  break-inside: auto;
+}
+
+@media print {
+  .doc-page-scroll {
+    background: white;
+    padding: 0;
+  }
+  .doc-page-sheet {
+    box-shadow: none;
+    min-height: auto;
+  }
+}
+
+.tiptap-editor .doc-prose-mirror {
+  @apply outline-none text-zinc-900;
+  font-size: 11pt;
+  line-height: 1.6;
+  min-height: 12rem;
+}
+
+.tiptap-editor .doc-prose-mirror p {
+  @apply mb-3;
+}
+
+.tiptap-editor .doc-prose-mirror h1 {
+  @apply text-3xl font-bold mb-3 mt-6;
+}
+
+.tiptap-editor .doc-prose-mirror h2 {
+  @apply text-2xl font-semibold mb-2 mt-5;
+}
+
+.tiptap-editor .doc-prose-mirror h3 {
   @apply text-xl font-semibold mb-2 mt-4;
 }
 
-.tiptap-editor .ProseMirror ul,
-.tiptap-editor .ProseMirror ol {
-  @apply pl-6 mb-4;
+.tiptap-editor .doc-prose-mirror ul:not([data-type="taskList"]),
+.tiptap-editor .doc-prose-mirror ol {
+  @apply pl-6 mb-3;
 }
 
-.tiptap-editor .ProseMirror blockquote {
+.tiptap-editor .doc-prose-mirror ul[data-type="taskList"] {
+  @apply list-none pl-0 mb-3;
+}
+
+.tiptap-editor .doc-prose-mirror ul[data-type="taskList"] li {
+  @apply flex items-start gap-2;
+}
+
+.tiptap-editor .doc-prose-mirror blockquote {
   @apply border-l-4 border-zinc-300 pl-4 italic text-zinc-700 my-4;
 }
 
-.tiptap-editor .ProseMirror code {
+.tiptap-editor .doc-prose-mirror code {
   @apply bg-zinc-100 px-1.5 py-0.5 rounded text-sm font-mono text-zinc-800;
 }
 
-.tiptap-editor .ProseMirror pre {
+.tiptap-editor .doc-prose-mirror pre {
   @apply bg-zinc-100 p-4 rounded-lg my-4 overflow-x-auto;
 }
 
-.tiptap-editor .ProseMirror pre code {
+.tiptap-editor .doc-prose-mirror pre code {
   @apply bg-transparent p-0;
 }
 
-.tiptap-editor .ProseMirror a {
-  @apply text-blue-600 underline;
+.tiptap-editor .doc-prose-mirror a.doc-link {
+  @apply text-blue-600 underline cursor-pointer;
 }
 
-.tiptap-editor .ProseMirror:focus {
+.tiptap-editor .doc-prose-mirror img {
+  @apply max-w-full h-auto rounded my-2;
+}
+
+.tiptap-editor .doc-prose-mirror table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  margin: 1rem 0;
+}
+
+.tiptap-editor .doc-prose-mirror td,
+.tiptap-editor .doc-prose-mirror th {
+  border: 1px solid #d4d4d8;
+  padding: 6px 8px;
+  vertical-align: top;
+  min-width: 4em;
+}
+
+.tiptap-editor .doc-prose-mirror th {
+  @apply bg-zinc-100 font-semibold text-left;
+}
+
+.tiptap-editor .doc-prose-mirror .selectedCell {
+  @apply bg-blue-100/80;
+}
+
+.tiptap-editor .doc-prose-mirror hr {
+  @apply my-6 border-zinc-300;
+}
+
+.tiptap-editor .doc-page-break {
+  position: relative;
+  height: 0;
+  margin: 24px 0;
+  break-after: page;
+  page-break-after: always;
+}
+
+.tiptap-editor .doc-page-break::before {
+  content: "Page break";
+  display: block;
+  text-align: center;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #a1a1aa;
+  border-top: 1px dashed #d4d4d8;
+  padding-top: 8px;
+  margin-top: 8px;
+}
+
+@media print {
+  .tiptap-editor .doc-page-break::before {
+    display: none;
+  }
+}
+
+.tiptap-editor .doc-prose-mirror:focus {
   @apply outline-none;
 }
 
-.tiptap-editor .ProseMirror p.is-editor-empty:first-child::before {
+.tiptap-editor .doc-prose-mirror p.is-editor-empty:first-child::before {
   @apply text-zinc-400 float-left h-0 pointer-events-none;
   content: attr(data-placeholder);
 }
