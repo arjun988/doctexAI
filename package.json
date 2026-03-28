@@ -32,6 +32,7 @@
     "@tiptap/pm": "2.27.2",
     "@tiptap/react": "2.27.2",
     "@tiptap/starter-kit": "2.27.2",
+    "@vercel/analytics": "^2.0.1",
     "html-docx-js-typescript": "^0.1.5",
     "html2pdf.js": "^0.14.0",
     "katex": "^0.16.44",
