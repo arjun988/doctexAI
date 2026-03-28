@@ -11,11 +11,13 @@ import type { AiSettings } from "@/lib/settings";
 import { AI_TOOLS, parseSlashCommand, primarySlash, type AiToolId } from "@/lib/aiTools";
 import { streamAiChat, type ChatMessage } from "@/lib/ai";
 import {
+  BookOpen,
   Copy,
   GripVertical,
   ListTree,
   Loader2,
   Send,
+  Sigma,
   Sparkles,
   SpellCheck,
   TextSelect,
@@ -513,15 +515,43 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
               <ListTree className="h-3.5 w-3.5 shrink-0 text-accent" aria-hidden />
               Clean formatting
             </button>
+            <button
+              type="button"
+              disabled={streaming}
+              onClick={() => runTool("math-equations")}
+              className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-zinc-800 transition hover:border-accent/40 hover:bg-accent/5 disabled:opacity-40 dark:border-surface-border dark:bg-surface-raised dark:text-zinc-200 dark:hover:bg-surface-overlay"
+              title="Runs /math — KaTeX LaTeX in $…$ or $$…$$ delimiters"
+            >
+              <Sigma className="h-3.5 w-3.5 shrink-0 text-accent" aria-hidden />
+              Math
+            </button>
+            <button
+              type="button"
+              disabled={streaming}
+              onClick={() => runTool("research-paper")}
+              className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-zinc-800 transition hover:border-accent/40 hover:bg-accent/5 disabled:opacity-40 dark:border-surface-border dark:bg-surface-raised dark:text-zinc-200 dark:hover:bg-surface-overlay"
+              title="Runs /research-paper — Times 12pt, justified, captions, references (IEEE/APA/MLA)"
+            >
+              <BookOpen className="h-3.5 w-3.5 shrink-0 text-accent" aria-hidden />
+              Research paper
+            </button>
           </div>
           <p className="text-[10px] text-zinc-500 dark:text-zinc-600">
             Or type{" "}
             <code className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-[10px] dark:bg-surface-overlay">
               /fix-grammar
-            </code>{" "}
-            or{" "}
+            </code>
+            ,{" "}
             <code className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-[10px] dark:bg-surface-overlay">
               /clean-formatting
+            </code>
+            ,{" "}
+            <code className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-[10px] dark:bg-surface-overlay">
+              /math
+            </code>
+            ,{" "}
+            <code className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-[10px] dark:bg-surface-overlay">
+              /research-paper
             </code>{" "}
             in the box.
           </p>
@@ -539,7 +569,7 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
                 void send();
               }
             }}
-            placeholder="/fix-grammar · /clean-formatting · or any instruction…"
+            placeholder="/fix-grammar · /clean-formatting · /math · /research-paper · or any instruction…"
             rows={3}
             disabled={streaming}
             className="min-h-[80px] w-full resize-none rounded-xl border border-zinc-200 bg-zinc-50/80 px-3 py-2.5 pr-12 text-sm text-zinc-900 shadow-inner placeholder:text-zinc-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/25 disabled:opacity-60 dark:border-surface-border dark:bg-surface-overlay dark:text-zinc-100 dark:placeholder:text-zinc-600 dark:focus:ring-accent/20"

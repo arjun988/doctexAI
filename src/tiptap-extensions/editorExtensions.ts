@@ -12,6 +12,7 @@ import Highlight from "@tiptap/extension-highlight";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import Image from "@tiptap/extension-image";
+import Mathematics from "./mathematicsExtension";
 import Table from "@tiptap/extension-table";
 import TableRow from "@tiptap/extension-table-row";
 import TableCell from "@tiptap/extension-table-cell";
@@ -44,6 +45,14 @@ export function createEditorExtensions(placeholder: string) {
       openOnClick: false,
       autolink: true,
       HTMLAttributes: { class: "doc-link" },
+    }),
+    Mathematics.configure({
+      katexOptions: {
+        throwOnError: false,
+        errorColor: "#b91c1c",
+        trust: false,
+      },
+      regex: /\$\$([\s\S]+?)\$\$|\$([^$\n]+)\$/g,
     }),
     TaskList,
     TaskItem.configure({ nested: true }),

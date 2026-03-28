@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import "katex/dist/katex.min.css";
 import "tippy.js/dist/tippy.css";
 import { ThemeProvider } from "@/components/ThemeProvider";
 
@@ -17,6 +18,10 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "DocTex — AI document editor",
   description: "Edit documents with AI, import Word files, no account required.",
+  icons: {
+    icon: [{ url: "/doctex.png", type: "image/png" }],
+    apple: "/doctex.png",
+  },
 };
 
 export default function RootLayout({

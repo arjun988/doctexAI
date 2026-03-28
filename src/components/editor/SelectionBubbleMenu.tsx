@@ -8,12 +8,14 @@ import { LinkUrlDialog } from "@/components/editor/EditorDialogs";
 import type { AiToolId } from "@/lib/aiTools";
 import {
   Bold,
+  BookOpen,
   ChevronDown,
   Highlighter,
   Italic,
   Link2,
   ListTree,
   Palette,
+  Sigma,
   Sparkles,
   SpellCheck,
   Strikethrough,
@@ -123,6 +125,26 @@ function AiToolsDropdown({ onAiTool }: { onAiTool: (tool: AiToolId) => void }) {
         >
           <ListTree className="h-4 w-4 shrink-0 text-sky-600 dark:text-sky-400" />
           <span className="font-medium">Clean formatting</span>
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => run("math-equations")}
+          className="flex w-full items-center gap-2 px-3 py-2 text-left text-zinc-800 transition hover:bg-violet-50 dark:text-zinc-100 dark:hover:bg-violet-950/50"
+        >
+          <Sigma className="h-4 w-4 shrink-0 text-violet-600 dark:text-violet-400" />
+          <span className="font-medium">Math equations</span>
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => run("research-paper")}
+          className="flex w-full items-center gap-2 px-3 py-2 text-left text-zinc-800 transition hover:bg-amber-50 dark:text-zinc-100 dark:hover:bg-amber-950/50"
+        >
+          <BookOpen className="h-4 w-4 shrink-0 text-amber-700 dark:text-amber-400" />
+          <span className="font-medium">Research paper</span>
         </button>
       </div>,
       document.body

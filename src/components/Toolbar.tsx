@@ -1,38 +1,25 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import mammoth from "mammoth";
 import {
+  ChevronDown,
   FileUp,
   FileDown,
   FileCode,
   Settings,
   Trash2,
   PanelRight,
+  Download,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { saveDocumentHtml } from "@/lib/settings";
 import type { DocumentLayout } from "@/lib/documentLayout";
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function wrapExportedBody(body: string, layout: DocumentLayout): string {
-  let out = "";
-  if (layout.headerText.trim()) {
-    out += `<header style="font-size:11pt;color:#444;border-bottom:1px solid #ddd;padding-bottom:8px;margin-bottom:16px;text-align:center;white-space:pre-wrap">${escapeHtml(layout.headerText)}</header>`;
-  }
-  out += `<article>${body}</article>`;
-  if (layout.footerText.trim()) {
-    out += `<footer style="font-size:11pt;color:#444;border-top:1px solid #ddd;padding-top:8px;margin-top:16px;text-align:center;white-space:pre-wrap">${escapeHtml(layout.footerText)}</footer>`;
-  }
-  return out;
-}
+import {
+  exportDocumentToPdf,
+  getHtmlExportStyles,
+  wrapExportedBody,
+} from "@/lib/documentExport";
 
 type Props = {
   getHtml: () => string;
@@ -52,6 +39,18 @@ export function Toolbar({
   onTogglePanel,
 }: Props) {
   const importRef = useRef<HTMLInputElement>(null);
+  const exportWrapRef = useRef<HTMLDivElement>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
+
+  useEffect(() => {
+    if (!exportOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (!exportWrapRef.current?.contains(e.target as Node)) setExportOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [exportOpen]);
 
   async function onImportFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -67,18 +66,7 @@ export function Toolbar({
     const html = getHtml();
     const layout = getLayout();
     const wrapped = wrapExportedBody(html, layout);
-    const pageSize = layout.orientation === "landscape" ? "A4 landscape" : "A4";
-    const styles = `<style>
-      @page { size: ${pageSize}; margin: ${layout.marginTop} ${layout.marginRight} ${layout.marginBottom} ${layout.marginLeft}; }
-      body { font-family: Georgia, "Times New Roman", serif; color: #111; margin: 0; padding: 12px; box-sizing: border-box; }
-      article { column-count: ${layout.columns}; column-gap: 1.25em; }
-      table { border-collapse: collapse; width: 100%; }
-      td, th { border: 1px solid #ccc; padding: 6px 8px; vertical-align: top; }
-      img { max-width: 100%; height: auto; }
-      .doc-page-break { break-after: page; page-break-after: always; height: 0; margin: 0; border: 0; }
-      ul[data-type="taskList"] { list-style: none; padding-left: 0; }
-      ul[data-type="taskList"] li { display: flex; gap: 0.5rem; align-items: flex-start; }
-    </style>`;
+    const styles = getHtmlExportStyles(layout);
     const blob = new Blob(
       [
         `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Document</title>${styles}</head><body>`,
@@ -114,6 +102,20 @@ export function Toolbar({
     }
   }
 
+  async function downloadPdf() {
+    if (pdfBusy) return;
+    setPdfBusy(true);
+    try {
+      const html = getHtml();
+      const layout = getLayout();
+      await exportDocumentToPdf(html, layout);
+    } catch {
+      /* user sees no file — optional: toast */
+    } finally {
+      setPdfBusy(false);
+    }
+  }
+
   function clearDoc() {
     if (typeof window !== "undefined" && !window.confirm("Clear the document?")) return;
     const empty = "<p></p>";
@@ -142,24 +144,74 @@ export function Toolbar({
         <FileUp className="h-3.5 w-3.5" />
         Import
       </button>
-      <button
-        type="button"
-        onClick={downloadHtml}
-        className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-surface-overlay dark:hover:text-zinc-100"
-        title="Export HTML"
-      >
-        <FileCode className="h-3.5 w-3.5" />
-        HTML
-      </button>
-      <button
-        type="button"
-        onClick={() => void downloadDocx()}
-        className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-surface-overlay dark:hover:text-zinc-100"
-        title="Export Word"
-      >
-        <FileDown className="h-3.5 w-3.5" />
-        Word
-      </button>
+      <div ref={exportWrapRef} className="relative">
+        <button
+          type="button"
+          aria-expanded={exportOpen}
+          aria-haspopup="menu"
+          onClick={() => setExportOpen((v) => !v)}
+          className={`flex items-center gap-1 rounded-md px-2 py-1.5 text-xs transition ${
+            exportOpen
+              ? "bg-zinc-200 text-zinc-900 dark:bg-surface-overlay dark:text-zinc-100"
+              : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-surface-overlay dark:hover:text-zinc-100"
+          }`}
+          title="Export document"
+        >
+          Export
+          <ChevronDown
+            className={`h-3.5 w-3.5 shrink-0 opacity-70 transition-transform ${exportOpen ? "rotate-180" : ""}`}
+            aria-hidden
+          />
+        </button>
+        {exportOpen ? (
+          <div
+            role="menu"
+            aria-label="Export format"
+            className="absolute left-0 top-full z-[200] mt-1 min-w-[11rem] overflow-hidden rounded-lg border border-zinc-200 bg-white py-1 shadow-lg dark:border-surface-border dark:bg-zinc-900"
+          >
+            <button
+              type="button"
+              role="menuitem"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                downloadHtml();
+                setExportOpen(false);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-zinc-800 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800"
+            >
+              <FileCode className="h-3.5 w-3.5 shrink-0 text-zinc-500 dark:text-zinc-400" />
+              HTML
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                void downloadDocx();
+                setExportOpen(false);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-zinc-800 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800"
+            >
+              <FileDown className="h-3.5 w-3.5 shrink-0 text-zinc-500 dark:text-zinc-400" />
+              Word (.docx)
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              disabled={pdfBusy}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                void downloadPdf();
+                setExportOpen(false);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-zinc-800 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-45 dark:text-zinc-200 dark:hover:bg-zinc-800"
+            >
+              <Download className="h-3.5 w-3.5 shrink-0 text-zinc-500 dark:text-zinc-400" />
+              {pdfBusy ? "PDF (preparing…)" : "PDF"}
+            </button>
+          </div>
+        ) : null}
+      </div>
       <div className="flex-1" />
       <ThemeToggle />
       <button

@@ -167,6 +167,22 @@ body {
   @apply bg-blue-100/80;
 }
 
+/* KaTeX (TipTap mathematics) — match body text; do not force a “paper on dark UI” gray
+   when the editor page is still light (see .doc-page-sheet). */
+.tiptap-editor .doc-prose-mirror .Tiptap-mathematics-render {
+  margin: 0 0.15em;
+  user-select: none;
+  color: inherit;
+}
+
+.tiptap-editor .doc-prose-mirror .Tiptap-mathematics-render .katex {
+  color: currentColor;
+}
+
+.tiptap-editor .doc-prose-mirror .Tiptap-mathematics-render .katex-display {
+  margin: 0.5em 0;
+}
+
 .tiptap-editor .doc-prose-mirror hr {
   @apply my-6 border-zinc-300;
 }

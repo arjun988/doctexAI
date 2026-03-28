@@ -2,7 +2,8 @@
 
 import type { Editor } from "@tiptap/core";
 import { useEffect, useReducer, useRef, useState } from "react";
-import { LinkUrlDialog, TableInsertDialog } from "@/components/editor/EditorDialogs";
+import { LinkUrlDialog, MathEquationDialog, TableInsertDialog } from "@/components/editor/EditorDialogs";
+import { parseMathSelection } from "@/lib/mathEquation";
 import {
   AlignCenter,
   AlignJustify,
@@ -27,6 +28,7 @@ import {
   Pilcrow,
   RemoveFormatting,
   Rows2,
+  Sigma,
   Strikethrough as StrikethroughIcon,
   Subscript as SubIcon,
   Superscript as SupIcon,
@@ -144,6 +146,12 @@ export function FormattingToolbar({ editor, onOpenPageSetup }: Props) {
   const imageFileRef = useRef<HTMLInputElement>(null);
   const [tableDialogOpen, setTableDialogOpen] = useState(false);
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
+  const [mathDialogOpen, setMathDialogOpen] = useState(false);
+  const [mathDialogInitial, setMathDialogInitial] = useState({
+    latex: "",
+    display: false,
+    replaceSelection: false,
+  });
 
   const ta = textAlignValue(editor);
   const inTable = editor.isActive("table");
@@ -154,6 +162,28 @@ export function FormattingToolbar({ editor, onOpenPageSetup }: Props) {
     marginTop?: string | null;
     marginBottom?: string | null;
   };
+
+  function openMathDialog() {
+    const { from, to } = editor.state.selection;
+    const selected = from !== to ? editor.state.doc.textBetween(from, to, "\n") : "";
+    const parsed = parseMathSelection(selected);
+    if (parsed) {
+      setMathDialogInitial({
+        latex: parsed.latex,
+        display: parsed.display,
+        replaceSelection: true,
+      });
+    } else if (selected.trim()) {
+      setMathDialogInitial({
+        latex: selected.trim(),
+        display: false,
+        replaceSelection: true,
+      });
+    } else {
+      setMathDialogInitial({ latex: "", display: false, replaceSelection: false });
+    }
+    setMathDialogOpen(true);
+  }
 
   function onPickImageFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -526,6 +556,9 @@ export function FormattingToolbar({ editor, onOpenPageSetup }: Props) {
         >
           <Link2 className="h-3.5 w-3.5" />
         </Btn>
+        <Btn title="Insert equation — LaTeX (KaTeX); select existing $…$ to edit" onClick={openMathDialog}>
+          <Sigma className="h-3.5 w-3.5" />
+        </Btn>
         <Btn
           title="Insert image from file"
           onClick={() => imageFileRef.current?.click()}
@@ -560,6 +593,18 @@ export function FormattingToolbar({ editor, onOpenPageSetup }: Props) {
             return;
           }
           editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
+        }}
+      />
+      <MathEquationDialog
+        open={mathDialogOpen}
+        onClose={() => setMathDialogOpen(false)}
+        initialLatex={mathDialogInitial.latex}
+        initialDisplay={mathDialogInitial.display}
+        replaceSelection={mathDialogInitial.replaceSelection}
+        onInsert={(text, replaceSelection) => {
+          const chain = editor.chain().focus();
+          if (replaceSelection) chain.deleteSelection();
+          chain.insertContent(text).run();
         }}
       />
 
