@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { PromptPanelHandle } from "@/components/PromptPanel";
 import { DocEditor, type EditorApi } from "@/components/DocEditor";
 import { Toolbar } from "@/components/Toolbar";
 import { PromptPanel } from "@/components/PromptPanel";
@@ -41,6 +42,7 @@ export default function Home() {
   const dragStartRef = useRef<{ x: number; w: number } | null>(null);
   const widthRef = useRef(400);
   const apiRef = useRef<EditorApi | null>(null);
+  const promptPanelRef = useRef<PromptPanelHandle>(null);
 
   useEffect(() => {
     widthRef.current = panelWidth;
@@ -144,33 +146,31 @@ export default function Home() {
             layout={documentLayout}
             onOpenPageSetup={() => setLayoutOpen(true)}
             onReady={onEditorReady}
+            onAiTool={(tool) => promptPanelRef.current?.runTool(tool)}
             className="min-h-0"
           />
         </main>
-        {panelOpen && (
-          <>
-            <AiPanelResizeHandle onMouseDown={onResizeMouseDown} />
-            <aside
-              data-ai-panel
-              className={`flex h-[min(42vh,320px)] shrink-0 flex-col overflow-hidden border-t border-zinc-200 bg-white dark:border-surface-border dark:bg-surface md:h-auto md:min-w-[280px] md:max-w-[min(90vw,720px)] md:rounded-l-xl md:border-l md:border-t-0 md:shadow-[inset_1px_0_0_rgba(0,0,0,0.04)] dark:md:shadow-[inset_1px_0_0_rgba(255,255,255,0.04)] ${
-                resizing ? "select-none md:will-change-[width]" : ""
-              }`}
-              style={
-                isDesktop
-                  ? { width: panelWidth }
-                  : { width: "100%", maxWidth: "100%" }
-              }
-            >
-              <PromptPanel
-                settings={settings}
-                getDocumentHtml={getDocumentHtml}
-                getSelectionText={getSelectionText}
-                getSelectionRange={getSelectionRange}
-                applyAiHtml={applyAiHtml}
-              />
-            </aside>
-          </>
-        )}
+        {panelOpen && <AiPanelResizeHandle onMouseDown={onResizeMouseDown} />}
+        <aside
+          data-ai-panel
+          className={`flex h-[min(42vh,320px)] shrink-0 flex-col overflow-hidden border-t border-zinc-200 bg-white dark:border-surface-border dark:bg-surface md:h-auto md:min-w-[280px] md:max-w-[min(90vw,720px)] md:rounded-l-xl md:border-l md:border-t-0 md:shadow-[inset_1px_0_0_rgba(0,0,0,0.04)] dark:md:shadow-[inset_1px_0_0_rgba(255,255,255,0.04)] ${
+            resizing ? "select-none md:will-change-[width]" : ""
+          } ${!panelOpen ? "hidden" : ""}`}
+          style={
+            isDesktop
+              ? { width: panelWidth }
+              : { width: "100%", maxWidth: "100%" }
+          }
+        >
+          <PromptPanel
+            ref={promptPanelRef}
+            settings={settings}
+            getDocumentHtml={getDocumentHtml}
+            getSelectionText={getSelectionText}
+            getSelectionRange={getSelectionRange}
+            applyAiHtml={applyAiHtml}
+          />
+        </aside>
       </div>
       <SettingsModal
         open={settingsOpen}

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import { normalizeAiOutput } from "@/lib/aiDocumentApply";
 import { loadDocumentHtml, saveDocumentHtml } from "@/lib/settings";
 import type { DocumentLayout } from "@/lib/documentLayout";
+import type { AiToolId } from "@/lib/aiTools";
 import { createEditorExtensions } from "@/tiptap-extensions/editorExtensions";
 import { FormattingToolbar } from "@/components/editor/FormattingToolbar";
 import { SelectionBubbleMenu } from "@/components/editor/SelectionBubbleMenu";
@@ -32,9 +33,11 @@ type Props = {
   layout: DocumentLayout;
   onOpenPageSetup?: () => void;
   onReady?: (api: EditorApi) => void;
+  /** Run built-in AI tools (grammar, formatting) from the selection bubble menu. */
+  onAiTool?: (tool: AiToolId) => void;
 };
 
-export function DocEditor({ className, layout, onOpenPageSetup, onReady }: Props) {
+export function DocEditor({ className, layout, onOpenPageSetup, onReady, onAiTool }: Props) {
   const editorRef = useRef<Editor | null>(null);
 
   const editorOptions = useMemo(
@@ -140,7 +143,7 @@ export function DocEditor({ className, layout, onOpenPageSetup, onReady }: Props
   return (
     <div className={`flex min-h-0 w-full flex-1 flex-col ${className ?? ""}`}>
       <FormattingToolbar editor={editor} onOpenPageSetup={onOpenPageSetup} />
-      <SelectionBubbleMenu editor={editor} />
+      <SelectionBubbleMenu editor={editor} onAiTool={onAiTool} />
       <div className="doc-page-scroll min-h-0 w-full flex-1 overflow-y-auto">
         <div
           className={`doc-page-sheet w-full min-h-full ${

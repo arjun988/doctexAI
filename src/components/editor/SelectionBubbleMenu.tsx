@@ -2,18 +2,22 @@
 
 import { BubbleMenu } from "@tiptap/react";
 import type { Editor } from "@tiptap/core";
+import type { AiToolId } from "@/lib/aiTools";
 import {
   Bold,
   Highlighter,
   Italic,
   Link2,
+  ListTree,
   Palette,
+  SpellCheck,
   Strikethrough,
   Underline,
 } from "lucide-react";
 
 type Props = {
   editor: Editor;
+  onAiTool?: (tool: AiToolId) => void;
 };
 
 function B({
@@ -42,7 +46,7 @@ function B({
   );
 }
 
-export function SelectionBubbleMenu({ editor }: Props) {
+export function SelectionBubbleMenu({ editor, onAiTool }: Props) {
   return (
     <BubbleMenu
       editor={editor}
@@ -112,6 +116,23 @@ export function SelectionBubbleMenu({ editor }: Props) {
       >
         <Highlighter className="h-4 w-4" />
       </B>
+      {onAiTool && (
+        <>
+          <div className="mx-0.5 h-5 w-px bg-zinc-300 dark:bg-zinc-600" />
+          <B
+            title="AI: fix grammar & spelling"
+            onClick={() => onAiTool("fix-grammar")}
+          >
+            <SpellCheck className="h-4 w-4" />
+          </B>
+          <B
+            title="AI: clean formatting (paragraphs, lists, emphasis)"
+            onClick={() => onAiTool("clean-formatting")}
+          >
+            <ListTree className="h-4 w-4" />
+          </B>
+        </>
+      )}
     </BubbleMenu>
   );
 }

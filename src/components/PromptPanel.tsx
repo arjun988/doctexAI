@@ -1,14 +1,23 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import type { AiSettings } from "@/lib/settings";
+import { AI_TOOLS, parseSlashCommand, primarySlash, type AiToolId } from "@/lib/aiTools";
 import { streamAiChat, type ChatMessage } from "@/lib/ai";
 import {
   Copy,
   GripVertical,
+  ListTree,
   Loader2,
   Send,
   Sparkles,
+  SpellCheck,
   TextSelect,
   X,
 } from "lucide-react";
@@ -30,7 +39,17 @@ type Props = {
   ) => void;
 };
 
+export type PromptPanelHandle = {
+  runTool: (tool: AiToolId) => void;
+};
+
 const NO_APPLY = /^\s*NO_APPLY:\s*([\s\S]*)$/i;
+
+/** Shown in chat while the model streams HTML that we apply to the doc (never show raw tags). */
+const MSG_APPLYING_TO_DOC = "Applying changes to your document…";
+/** Shown after a successful document edit (the editor holds the real HTML). */
+const MSG_APPLIED_TO_DOC =
+  "I've applied that change to your document — you should see it in the editor.";
 
 const SYSTEM: ChatMessage = {
   role: "system",
@@ -61,13 +80,16 @@ function newBlockId(): string {
   return `ctx-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-export function PromptPanel({
-  settings,
-  getDocumentHtml,
-  getSelectionText,
-  getSelectionRange,
-  applyAiHtml,
-}: Props) {
+export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptPanel(
+  {
+    settings,
+    getDocumentHtml,
+    getSelectionText,
+    getSelectionRange,
+    applyAiHtml,
+  },
+  ref
+) {
   const [input, setInput] = useState("");
   const [contextBlocks, setContextBlocks] = useState<ContextBlock[]>([]);
   const [turns, setTurns] = useState<ChatMessage[]>([]);
@@ -103,107 +125,147 @@ export function PromptPanel({
     ]);
   }, []);
 
+  const executeRequest = useCallback(
+    async (args: { userDisplay: string; instructionBody: string }) => {
+      const { userDisplay, instructionBody } = args;
+      if (!instructionBody.trim() || streaming) return;
+
+      setError(null);
+      const selectionRange = useSelection ? getSelectionRange() : null;
+      const selectionText = getSelectionText().trim();
+      const docSnippet = getDocumentHtml();
+      const prior =
+        turns.length > 0
+          ? turns
+              .map((t) => `${t.role === "user" ? "User" : "Assistant"}: ${t.content}`)
+              .join("\n\n")
+          : "";
+
+      const contextParts: string[] = [];
+      if (contextBlocks.length > 0) {
+        contextBlocks.forEach((b, i) => {
+          const label = b.source === "paste" ? "Pasted context" : "Context from selection";
+          contextParts.push(`### ${label} (${i + 1})\n${b.text}`);
+        });
+      }
+      if (useSelection && selectionText && selectionRange) {
+        contextParts.push(`### Active editor selection (plain text)\n${selectionText}`);
+      }
+      contextParts.push(`### Document (HTML)\n${docSnippet.slice(0, 120_000)}`);
+      if (prior) {
+        contextParts.push(`### Prior conversation\n${prior}`);
+      }
+      const applyHint =
+        selectionRange && useSelection
+          ? "Apply target: **selection** — output only the replacement HTML for the selected range."
+          : "Apply target: **full document** — output the full document body as HTML.";
+      contextParts.push(`### Instruction\n${instructionBody}\n\n${applyHint}`);
+
+      const userPayload = contextParts.join("\n\n");
+      const apiMessages: ChatMessage[] = [SYSTEM, { role: "user", content: userPayload }];
+
+      setTurns((prev) => [...prev, { role: "user", content: userDisplay }]);
+      setInput("");
+      setContextBlocks([]);
+      setStreaming(true);
+
+      let assistant = "";
+      setTurns((prev) => [...prev, { role: "assistant", content: "" }]);
+      queueMicrotask(() => scrollDown());
+
+      const applyTarget =
+        selectionRange && useSelection
+          ? ({ type: "range" as const, from: selectionRange.from, to: selectionRange.to } as const)
+          : ({ type: "document" as const } as const);
+
+      try {
+        await streamAiChat(settings, apiMessages, (delta) => {
+          assistant += delta;
+          setTurns((prev) => {
+            const copy = [...prev];
+            const last = copy[copy.length - 1];
+            if (last?.role === "assistant") {
+              const isNoApply = /^\s*NO_APPLY:/i.test(assistant);
+              let display = "";
+              if (isNoApply) {
+                display = assistant.replace(/^\s*NO_APPLY:\s*/i, "").trimEnd();
+              } else if (assistant.trim()) {
+                display = MSG_APPLYING_TO_DOC;
+              }
+              copy[copy.length - 1] = { ...last, content: display };
+            }
+            return copy;
+          });
+          requestAnimationFrame(() => scrollDown());
+        });
+
+        const noApplyMatch = assistant.match(NO_APPLY);
+        if (noApplyMatch) {
+          const answer = noApplyMatch[1].trim();
+          setTurns((prev) => {
+            const copy = [...prev];
+            const last = copy[copy.length - 1];
+            if (last?.role === "assistant") {
+              copy[copy.length - 1] = { ...last, content: answer };
+            }
+            return copy;
+          });
+        } else {
+          applyAiHtml(assistant, applyTarget);
+          setTurns((prev) => {
+            const copy = [...prev];
+            const last = copy[copy.length - 1];
+            if (last?.role === "assistant") {
+              copy[copy.length - 1] = { ...last, content: MSG_APPLIED_TO_DOC };
+            }
+            return copy;
+          });
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Request failed");
+        setTurns((prev) => prev.slice(0, -2));
+      } finally {
+        setStreaming(false);
+        scrollDown();
+      }
+    },
+    [
+      streaming,
+      turns,
+      settings,
+      getDocumentHtml,
+      getSelectionText,
+      getSelectionRange,
+      useSelection,
+      contextBlocks,
+      scrollDown,
+      applyAiHtml,
+    ]
+  );
+
   const send = useCallback(async () => {
     const trimmed = input.trim();
     if (!trimmed || streaming) return;
 
-    setError(null);
-    const selectionRange =
-      useSelection ? getSelectionRange() : null;
-    const selectionText = getSelectionText().trim();
-    const docSnippet = getDocumentHtml();
-    const prior =
-      turns.length > 0
-        ? turns
-            .map((t) => `${t.role === "user" ? "User" : "Assistant"}: ${t.content}`)
-            .join("\n\n")
-        : "";
+    const parsed = parseSlashCommand(trimmed);
+    const instructionBody = parsed
+      ? `${AI_TOOLS[parsed.tool].instruction}${parsed.extra ? `\n\nAdditional notes: ${parsed.extra}` : ""}`
+      : trimmed;
 
-    const contextParts: string[] = [];
-    if (contextBlocks.length > 0) {
-      contextBlocks.forEach((b, i) => {
-        const label = b.source === "paste" ? "Pasted context" : "Context from selection";
-        contextParts.push(`### ${label} (${i + 1})\n${b.text}`);
+    await executeRequest({ userDisplay: trimmed, instructionBody });
+  }, [input, streaming, executeRequest]);
+
+  const runTool = useCallback(
+    (tool: AiToolId) => {
+      void executeRequest({
+        userDisplay: primarySlash(tool),
+        instructionBody: AI_TOOLS[tool].instruction,
       });
-    }
-    if (useSelection && selectionText && selectionRange) {
-      contextParts.push(`### Active editor selection (plain text)\n${selectionText}`);
-    }
-    contextParts.push(`### Document (HTML)\n${docSnippet.slice(0, 120_000)}`);
-    if (prior) {
-      contextParts.push(`### Prior conversation\n${prior}`);
-    }
-    const applyHint =
-      selectionRange && useSelection
-        ? "Apply target: **selection** — output only the replacement HTML for the selected range."
-        : "Apply target: **full document** — output the full document body as HTML.";
-    contextParts.push(`### Instruction\n${trimmed}\n\n${applyHint}`);
+    },
+    [executeRequest]
+  );
 
-    const userPayload = contextParts.join("\n\n");
-    const apiMessages: ChatMessage[] = [SYSTEM, { role: "user", content: userPayload }];
-
-    setTurns((prev) => [...prev, { role: "user", content: trimmed }]);
-    setInput("");
-    setContextBlocks([]);
-    setStreaming(true);
-
-    let assistant = "";
-    setTurns((prev) => [...prev, { role: "assistant", content: "" }]);
-    queueMicrotask(() => scrollDown());
-
-    const applyTarget =
-      selectionRange && useSelection
-        ? ({ type: "range" as const, from: selectionRange.from, to: selectionRange.to } as const)
-        : ({ type: "document" as const } as const);
-
-    try {
-      await streamAiChat(settings, apiMessages, (delta) => {
-        assistant += delta;
-        setTurns((prev) => {
-          const copy = [...prev];
-          const last = copy[copy.length - 1];
-          if (last?.role === "assistant") {
-            copy[copy.length - 1] = { ...last, content: assistant };
-          }
-          return copy;
-        });
-        requestAnimationFrame(() => scrollDown());
-      });
-
-      const noApplyMatch = assistant.match(NO_APPLY);
-      if (noApplyMatch) {
-        const answer = noApplyMatch[1].trim();
-        setTurns((prev) => {
-          const copy = [...prev];
-          const last = copy[copy.length - 1];
-          if (last?.role === "assistant") {
-            copy[copy.length - 1] = { ...last, content: answer };
-          }
-          return copy;
-        });
-      } else {
-        applyAiHtml(assistant, applyTarget);
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Request failed");
-      setTurns((prev) => prev.slice(0, -2));
-    } finally {
-      setStreaming(false);
-      scrollDown();
-    }
-  }, [
-    input,
-    streaming,
-    turns,
-    settings,
-    getDocumentHtml,
-    getSelectionText,
-    getSelectionRange,
-    useSelection,
-    contextBlocks,
-    scrollDown,
-    applyAiHtml,
-  ]);
+  useImperativeHandle(ref, () => ({ runTool }), [runTool]);
 
   const lastAssistant =
     [...turns].reverse().find((m) => m.role === "assistant")?.content ?? "";
@@ -426,6 +488,45 @@ export function PromptPanel({
             : "Full document will be replaced by the model output (unless the reply is a chat-only answer)."}
         </p>
 
+        <div className="space-y-1.5">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-600">
+            Tools
+          </span>
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              disabled={streaming}
+              onClick={() => runTool("fix-grammar")}
+              className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-zinc-800 transition hover:border-accent/40 hover:bg-accent/5 disabled:opacity-40 dark:border-surface-border dark:bg-surface-raised dark:text-zinc-200 dark:hover:bg-surface-overlay"
+              title="Runs /fix-grammar on the selection or whole document"
+            >
+              <SpellCheck className="h-3.5 w-3.5 shrink-0 text-accent" aria-hidden />
+              Fix grammar
+            </button>
+            <button
+              type="button"
+              disabled={streaming}
+              onClick={() => runTool("clean-formatting")}
+              className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-zinc-800 transition hover:border-accent/40 hover:bg-accent/5 disabled:opacity-40 dark:border-surface-border dark:bg-surface-raised dark:text-zinc-200 dark:hover:bg-surface-overlay"
+              title="Runs /clean-formatting — paragraphs, lists, bold, italic, headings"
+            >
+              <ListTree className="h-3.5 w-3.5 shrink-0 text-accent" aria-hidden />
+              Clean formatting
+            </button>
+          </div>
+          <p className="text-[10px] text-zinc-500 dark:text-zinc-600">
+            Or type{" "}
+            <code className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-[10px] dark:bg-surface-overlay">
+              /fix-grammar
+            </code>{" "}
+            or{" "}
+            <code className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-[10px] dark:bg-surface-overlay">
+              /clean-formatting
+            </code>{" "}
+            in the box.
+          </p>
+        </div>
+
         <div className="relative">
           <textarea
             ref={textareaRef}
@@ -438,7 +539,7 @@ export function PromptPanel({
                 void send();
               }
             }}
-            placeholder="Instruction… (paste here attaches context, not text in the prompt)"
+            placeholder="/fix-grammar · /clean-formatting · or any instruction…"
             rows={3}
             disabled={streaming}
             className="min-h-[80px] w-full resize-none rounded-xl border border-zinc-200 bg-zinc-50/80 px-3 py-2.5 pr-12 text-sm text-zinc-900 shadow-inner placeholder:text-zinc-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/25 disabled:opacity-60 dark:border-surface-border dark:bg-surface-overlay dark:text-zinc-100 dark:placeholder:text-zinc-600 dark:focus:ring-accent/20"
@@ -475,4 +576,4 @@ export function PromptPanel({
       </div>
     </div>
   );
-}
+});
