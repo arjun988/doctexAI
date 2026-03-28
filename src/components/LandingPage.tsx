@@ -82,17 +82,17 @@ export function LandingPage() {
             <p className="mx-auto mt-2 max-w-2xl text-center text-sm leading-relaxed text-[#57534e]">
               Math in the page, charts in place, and the assistant panel—same layout you use for real papers and reports.
             </p>
-            <div className="relative mt-10 overflow-hidden rounded-2xl border border-[#e7e5e4] bg-[#1c1917] shadow-[0_24px_80px_-20px_rgba(0,0,0,0.35)] ring-1 ring-black/5">
-              <div className="relative aspect-[1920/1000] w-full sm:aspect-[16/9]">
-                <Image
-                  src="/landing-editor.png"
-                  alt="DocTex document editor with formatting toolbar, mathematical content, figures, and AI assistant sidebar"
-                  fill
-                  className="object-cover object-top"
-                  sizes="(max-width: 1152px) 100vw, 1152px"
-                  priority
-                />
-              </div>
+            <div className="mx-auto mt-10 max-w-2xl overflow-hidden rounded-2xl border border-[#e7e5e4] bg-[#1c1917] shadow-[0_24px_80px_-20px_rgba(0,0,0,0.35)] ring-1 ring-black/5">
+              <Image
+                src="/landing-editor.png"
+                alt="DocTex document editor with formatting toolbar, mathematical content, figures, and AI assistant sidebar"
+                width={1920}
+                height={1000}
+                className="h-auto w-full object-contain object-top"
+                sizes="(max-width: 640px) 100vw, 672px"
+                quality={92}
+                priority
+              />
             </div>
           </div>
         </section>
