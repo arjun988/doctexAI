@@ -18,6 +18,7 @@ import TableRow from "@tiptap/extension-table-row";
 import TableCell from "@tiptap/extension-table-cell";
 import TableHeader from "@tiptap/extension-table-header";
 import { CustomParagraph } from "./customParagraph";
+import { Citation } from "./citationMark";
 import { FontSize } from "./fontSize";
 import { PageBreak } from "./pageBreak";
 
@@ -46,6 +47,7 @@ export function createEditorExtensions(placeholder: string) {
       autolink: true,
       HTMLAttributes: { class: "doc-link" },
     }),
+    Citation,
     Mathematics.configure({
       katexOptions: {
         throwOnError: false,

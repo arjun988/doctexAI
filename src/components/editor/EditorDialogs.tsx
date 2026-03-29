@@ -465,3 +465,104 @@ export function MathEquationDialog({
     </ModalLayer>
   );
 }
+
+type CitationInsertDialogProps = {
+  open: boolean;
+  onClose: () => void;
+  /** Visible in-text text, e.g. (Doe, 2024) or [1] */
+  initialDisplay: string;
+  onInsert: (display: string, placeholderOnly: boolean) => void;
+};
+
+export function CitationInsertDialog({
+  open,
+  onClose,
+  initialDisplay,
+  onInsert,
+}: CitationInsertDialogProps) {
+  const id = useId();
+  const [label, setLabel] = useState(initialDisplay);
+
+  useEffect(() => {
+    if (open) setLabel(initialDisplay);
+  }, [open, initialDisplay]);
+
+  if (!open) return null;
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    onInsert(label.trim(), false);
+    onClose();
+  }
+
+  function placeholderOnly() {
+    onInsert("", true);
+    onClose();
+  }
+
+  return (
+    <ModalLayer onBackdropClick={onClose}>
+      <div
+        role="dialog"
+        aria-labelledby={`${id}-cite-title`}
+        className="w-full max-w-md rounded-xl border border-zinc-200 bg-white p-4 shadow-2xl dark:border-surface-border dark:bg-surface-raised"
+      >
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h2 id={`${id}-cite-title`} className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+            Insert citation
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-surface-overlay"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <p className="mb-3 text-xs text-zinc-600 dark:text-zinc-500">
+          Type how the citation should appear in the text. Use “Placeholder only” if you do not have final
+          source details yet.
+        </p>
+        <form onSubmit={submit} className="space-y-3">
+          <div>
+            <label
+              htmlFor={`${id}-cite`}
+              className="mb-1 block text-xs font-medium text-zinc-700 dark:text-zinc-300"
+            >
+              In-text (author–year or [n])
+            </label>
+            <input
+              id={`${id}-cite`}
+              type="text"
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="e.g. (Doe, 2024) or [1]"
+              className={inputClass}
+              autoFocus
+            />
+          </div>
+          <div className="flex flex-wrap justify-end gap-2 pt-1">
+            <button
+              type="button"
+              onClick={placeholderOnly}
+              className="rounded-lg px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-surface-overlay"
+            >
+              Placeholder only
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-surface-overlay"
+            >
+              Cancel
+            </button>
+            <button type="submit" className="rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-white">
+              Insert
+            </button>
+          </div>
+        </form>
+      </div>
+    </ModalLayer>
+  );
+}

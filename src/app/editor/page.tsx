@@ -15,6 +15,8 @@ import {
   saveDocumentLayout,
   type DocumentLayout,
 } from "@/lib/documentLayout";
+import { EditorOnboardingTour } from "@/components/EditorOnboardingTour";
+import { shouldShowEditorOnboarding } from "@/lib/editorOnboarding";
 
 const PANEL_WIDTH_KEY = "doctex-ai-panel-width";
 
@@ -39,6 +41,7 @@ export default function EditorPage() {
   const [panelWidth, setPanelWidth] = useState(400);
   const [resizing, setResizing] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
   const dragStartRef = useRef<{ x: number; w: number } | null>(null);
   const widthRef = useRef(400);
   const apiRef = useRef<EditorApi | null>(null);
@@ -70,6 +73,13 @@ export default function EditorPage() {
     const onChange = () => setIsDesktop(mq.matches);
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
+  }, []);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      if (shouldShowEditorOnboarding()) setOnboardingOpen(true);
+    }, 480);
+    return () => window.clearTimeout(id);
   }, []);
 
   useEffect(() => {
@@ -153,6 +163,7 @@ export default function EditorPage() {
         {panelOpen && <AiPanelResizeHandle onMouseDown={onResizeMouseDown} />}
         <aside
           data-ai-panel
+          data-onboarding="ai-panel"
           className={`flex h-[min(42vh,320px)] shrink-0 flex-col overflow-hidden border-t border-zinc-200 bg-white dark:border-surface-border dark:bg-surface md:h-auto md:min-w-[280px] md:max-w-[min(90vw,720px)] md:rounded-l-xl md:border-l md:border-t-0 md:shadow-[inset_1px_0_0_rgba(0,0,0,0.04)] dark:md:shadow-[inset_1px_0_0_rgba(255,255,255,0.04)] ${
             resizing ? "select-none md:will-change-[width]" : ""
           } ${!panelOpen ? "hidden" : ""}`}
@@ -182,6 +193,11 @@ export default function EditorPage() {
         onClose={() => setLayoutOpen(false)}
         layout={documentLayout}
         onSave={onLayoutSave}
+      />
+      <EditorOnboardingTour
+        open={onboardingOpen}
+        onRequestClose={() => setOnboardingOpen(false)}
+        onNeedAiPanelVisible={() => setPanelOpen(true)}
       />
     </div>
   );

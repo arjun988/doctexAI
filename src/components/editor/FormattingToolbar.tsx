@@ -3,6 +3,8 @@
 import type { Editor } from "@tiptap/core";
 import { useEffect, useReducer, useRef, useState } from "react";
 import { LinkUrlDialog, MathEquationDialog, TableInsertDialog } from "@/components/editor/EditorDialogs";
+import { ManuscriptToolbar } from "@/components/editor/ManuscriptToolbar";
+import type { DocumentLayout } from "@/lib/documentLayout";
 import { parseMathSelection } from "@/lib/mathEquation";
 import {
   AlignCenter,
@@ -47,6 +49,9 @@ import {
 
 type Props = {
   editor: Editor;
+  layout: DocumentLayout;
+  lineNumbers: boolean;
+  onToggleLineNumbers: () => void;
   onOpenPageSetup?: () => void;
 };
 
@@ -141,7 +146,13 @@ function textAlignValue(editor: Editor): string | null | undefined {
   return editor.getAttributes("paragraph").textAlign;
 }
 
-export function FormattingToolbar({ editor, onOpenPageSetup }: Props) {
+export function FormattingToolbar({
+  editor,
+  layout,
+  lineNumbers,
+  onToggleLineNumbers,
+  onOpenPageSetup,
+}: Props) {
   useEditorRerender(editor);
   const imageFileRef = useRef<HTMLInputElement>(null);
   const [tableDialogOpen, setTableDialogOpen] = useState(false);
@@ -198,7 +209,10 @@ export function FormattingToolbar({ editor, onOpenPageSetup }: Props) {
   }
 
   return (
-    <div className="w-full shrink-0 border-b border-zinc-200 bg-white/95 px-2 py-1.5 backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/95">
+    <div
+      data-onboarding="formatting-toolbar"
+      className="w-full shrink-0 border-b border-zinc-200 bg-white/95 px-2 py-1.5 backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/95"
+    >
       <input
         ref={imageFileRef}
         type="file"
@@ -467,26 +481,34 @@ export function FormattingToolbar({ editor, onOpenPageSetup }: Props) {
         </label>
 
         <Btn
-          title="Increase indent"
-          onClick={() =>
-            editor
-              .chain()
-              .focus()
-              .updateAttributes("paragraph", { indent: Math.min(8, (p.indent ?? 0) + 1) })
-              .run()
-          }
+          title="Increase indent (nest list level when inside a list)"
+          onClick={() => {
+            if (editor.can().sinkListItem("listItem")) {
+              editor.chain().focus().sinkListItem("listItem").run();
+            } else {
+              editor
+                .chain()
+                .focus()
+                .updateAttributes("paragraph", { indent: Math.min(8, (p.indent ?? 0) + 1) })
+                .run();
+            }
+          }}
         >
           <IndentIncrease className="h-3.5 w-3.5" />
         </Btn>
         <Btn
-          title="Decrease indent"
-          onClick={() =>
-            editor
-              .chain()
-              .focus()
-              .updateAttributes("paragraph", { indent: Math.max(0, (p.indent ?? 0) - 1) })
-              .run()
-          }
+          title="Decrease indent (outdent list when inside a list)"
+          onClick={() => {
+            if (editor.can().liftListItem("listItem")) {
+              editor.chain().focus().liftListItem("listItem").run();
+            } else {
+              editor
+                .chain()
+                .focus()
+                .updateAttributes("paragraph", { indent: Math.max(0, (p.indent ?? 0) - 1) })
+                .run();
+            }
+          }}
         >
           <IndentDecrease className="h-3.5 w-3.5" />
         </Btn>
@@ -494,14 +516,14 @@ export function FormattingToolbar({ editor, onOpenPageSetup }: Props) {
         <Sep />
 
         <Btn
-          title="Bullet list"
+          title="Bullet list (indent / outdent for sub-levels)"
           active={editor.isActive("bulletList")}
           onClick={() => editor.chain().focus().toggleBulletList().run()}
         >
           <List className="h-3.5 w-3.5" />
         </Btn>
         <Btn
-          title="Numbered list"
+          title="Numbered list (indent / outdent for sub-levels)"
           active={editor.isActive("orderedList")}
           onClick={() => editor.chain().focus().toggleOrderedList().run()}
         >
@@ -574,6 +596,13 @@ export function FormattingToolbar({ editor, onOpenPageSetup }: Props) {
         <Btn title="Page break" onClick={() => editor.chain().focus().setPageBreak().run()}>
           <BetweenHorizontalStart className="h-3.5 w-3.5" />
         </Btn>
+        <Sep />
+        <ManuscriptToolbar
+          editor={editor}
+          layout={layout}
+          lineNumbers={lineNumbers}
+          onToggleLineNumbers={onToggleLineNumbers}
+        />
       </div>
 
       <TableInsertDialog

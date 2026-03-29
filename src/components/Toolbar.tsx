@@ -135,7 +135,10 @@ export function Toolbar({
   }
 
   return (
-    <header className="flex h-11 w-full shrink-0 items-center gap-1 border-b border-zinc-200 bg-white px-2 dark:border-surface-border dark:bg-surface-raised">
+    <header
+      data-onboarding="app-toolbar"
+      className="flex h-11 w-full shrink-0 items-center gap-1 border-b border-zinc-200 bg-white px-2 dark:border-surface-border dark:bg-surface-raised"
+    >
       <Link
         href="/"
         className="mr-2 flex shrink-0 items-center gap-2 rounded-md px-2 py-1 font-mono text-xs font-semibold tracking-tight text-zinc-800 transition hover:bg-zinc-100 hover:text-zinc-950 dark:text-zinc-200 dark:hover:bg-surface-overlay dark:hover:text-white"

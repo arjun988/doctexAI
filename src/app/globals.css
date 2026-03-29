@@ -11,6 +11,49 @@ body {
   @apply bg-zinc-100 text-zinc-900 antialiased dark:bg-surface dark:text-zinc-100;
 }
 
+@media (prefers-reduced-motion: no-preference) {
+  .editor-onboarding-backdrop {
+    animation: editor-onboarding-backdrop-in 0.35s ease-out both;
+  }
+
+  .editor-onboarding-card-pop {
+    animation: editor-onboarding-card-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .editor-onboarding-spotlight-pop {
+    animation: editor-onboarding-spotlight-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+}
+
+@keyframes editor-onboarding-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes editor-onboarding-card-in {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+@keyframes editor-onboarding-spotlight-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 /* Formatting toolbar: native <select> — light + dark */
 .formatting-toolbar-select {
   color-scheme: light;
@@ -212,6 +255,79 @@ body {
   .tiptap-editor .doc-page-break::before {
     display: none;
   }
+}
+
+.doc-line-numbers .tiptap-editor .doc-prose-mirror {
+  counter-reset: doc-block-num;
+}
+
+.doc-line-numbers .tiptap-editor .doc-prose-mirror > p,
+.doc-line-numbers .tiptap-editor .doc-prose-mirror > h1,
+.doc-line-numbers .tiptap-editor .doc-prose-mirror > h2,
+.doc-line-numbers .tiptap-editor .doc-prose-mirror > h3,
+.doc-line-numbers .tiptap-editor .doc-prose-mirror > ul,
+.doc-line-numbers .tiptap-editor .doc-prose-mirror > ol,
+.doc-line-numbers .tiptap-editor .doc-prose-mirror > blockquote,
+.doc-line-numbers .tiptap-editor .doc-prose-mirror > table,
+.doc-line-numbers .tiptap-editor .doc-prose-mirror > hr,
+.doc-line-numbers .tiptap-editor .doc-prose-mirror > pre {
+  position: relative;
+  counter-increment: doc-block-num;
+  padding-left: 2rem;
+}
+
+.doc-line-numbers .tiptap-editor .doc-prose-mirror > p::before,
+.doc-line-numbers .tiptap-editor .doc-prose-mirror > h1::before,
+.doc-line-numbers .tiptap-editor .doc-prose-mirror > h2::before,
+.doc-line-numbers .tiptap-editor .doc-prose-mirror > h3::before,
+.doc-line-numbers .tiptap-editor .doc-prose-mirror > ul::before,
+.doc-line-numbers .tiptap-editor .doc-prose-mirror > ol::before,
+.doc-line-numbers .tiptap-editor .doc-prose-mirror > blockquote::before,
+.doc-line-numbers .tiptap-editor .doc-prose-mirror > table::before,
+.doc-line-numbers .tiptap-editor .doc-prose-mirror > hr::before,
+.doc-line-numbers .tiptap-editor .doc-prose-mirror > pre::before {
+  content: counter(doc-block-num);
+  position: absolute;
+  left: 0;
+  top: 0.1em;
+  width: 1.5rem;
+  text-align: right;
+  font-size: 9px;
+  line-height: 1.5;
+  color: #71717a;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+  pointer-events: none;
+}
+
+.dark .doc-line-numbers .tiptap-editor .doc-prose-mirror > p::before,
+.dark .doc-line-numbers .tiptap-editor .doc-prose-mirror > h1::before,
+.dark .doc-line-numbers .tiptap-editor .doc-prose-mirror > h2::before,
+.dark .doc-line-numbers .tiptap-editor .doc-prose-mirror > h3::before,
+.dark .doc-line-numbers .tiptap-editor .doc-prose-mirror > ul::before,
+.dark .doc-line-numbers .tiptap-editor .doc-prose-mirror > ol::before,
+.dark .doc-line-numbers .tiptap-editor .doc-prose-mirror > blockquote::before,
+.dark .doc-line-numbers .tiptap-editor .doc-prose-mirror > table::before,
+.dark .doc-line-numbers .tiptap-editor .doc-prose-mirror > hr::before,
+.dark .doc-line-numbers .tiptap-editor .doc-prose-mirror > pre::before {
+  color: #a1a1aa;
+}
+
+.tiptap-editor .doc-prose-mirror .doc-citation {
+  border-bottom: 1px dotted rgb(59 130 246 / 0.55);
+  cursor: default;
+}
+
+.tiptap-editor .doc-prose-mirror p[data-footnote-anchor],
+.tiptap-editor .doc-prose-mirror p[data-endnote-anchor] {
+  font-size: 10pt;
+  color: #52525b;
+  margin-top: 0.35em;
+}
+
+.dark .tiptap-editor .doc-prose-mirror p[data-footnote-anchor],
+.dark .tiptap-editor .doc-prose-mirror p[data-endnote-anchor] {
+  color: #a1a1aa;
 }
 
 .tiptap-editor .doc-prose-mirror:focus {

@@ -1,10 +1,11 @@
 "use client";
 
 import { useEditor, EditorContent, type Editor } from "@tiptap/react";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { normalizeAiOutput } from "@/lib/aiDocumentApply";
 import { loadDocumentHtml, saveDocumentHtml } from "@/lib/settings";
 import type { DocumentLayout } from "@/lib/documentLayout";
+import { loadLineNumbersPref, saveLineNumbersPref } from "@/lib/manuscriptHelpers";
 import type { AiToolId } from "@/lib/aiTools";
 import { createEditorExtensions } from "@/tiptap-extensions/editorExtensions";
 import { FormattingToolbar } from "@/components/editor/FormattingToolbar";
@@ -39,6 +40,14 @@ type Props = {
 
 export function DocEditor({ className, layout, onOpenPageSetup, onReady, onAiTool }: Props) {
   const editorRef = useRef<Editor | null>(null);
+  const [lineNumbers, setLineNumbers] = useState(loadLineNumbersPref);
+  const toggleLineNumbers = useCallback(() => {
+    setLineNumbers((v) => {
+      const next = !v;
+      saveLineNumbersPref(next);
+      return next;
+    });
+  }, []);
 
   const editorOptions = useMemo(
     () => ({
@@ -142,9 +151,18 @@ export function DocEditor({ className, layout, onOpenPageSetup, onReady, onAiToo
 
   return (
     <div className={`flex min-h-0 w-full flex-1 flex-col ${className ?? ""}`}>
-      <FormattingToolbar editor={editor} onOpenPageSetup={onOpenPageSetup} />
+      <FormattingToolbar
+        editor={editor}
+        layout={layout}
+        lineNumbers={lineNumbers}
+        onToggleLineNumbers={toggleLineNumbers}
+        onOpenPageSetup={onOpenPageSetup}
+      />
       <SelectionBubbleMenu editor={editor} onAiTool={onAiTool} />
-      <div className="doc-page-scroll min-h-0 w-full flex-1 overflow-y-auto">
+      <div
+        data-onboarding="editor-canvas"
+        className="doc-page-scroll min-h-0 w-full flex-1 overflow-y-auto"
+      >
         <div
           className={`doc-page-sheet w-full min-h-full ${
             layout.orientation === "landscape" ? "doc-page-sheet--landscape" : "doc-page-sheet--portrait"
@@ -157,7 +175,7 @@ export function DocEditor({ className, layout, onOpenPageSetup, onReady, onAiToo
             </header>
           )}
           <div
-            className="doc-column-body min-h-[12rem]"
+            className={`doc-column-body min-h-[12rem]${lineNumbers ? " doc-line-numbers" : ""}`}
             style={{
               columnCount: layout.columns,
               columnGap: layout.columns > 1 ? "1.25em" : undefined,

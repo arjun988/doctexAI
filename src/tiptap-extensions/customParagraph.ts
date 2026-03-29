@@ -37,16 +37,27 @@ export const CustomParagraph = Paragraph.extend({
         default: null as string | null,
         parseHTML: (element) => element.style.marginBottom || null,
       },
+      footnoteAnchor: {
+        default: null as string | null,
+        parseHTML: (element) => element.getAttribute("data-footnote-anchor"),
+      },
+      endnoteAnchor: {
+        default: null as string | null,
+        parseHTML: (element) => element.getAttribute("data-endnote-anchor"),
+      },
     };
   },
 
   renderHTML({ node, HTMLAttributes }) {
-    const { indent, lineHeight, marginTop, marginBottom } = node.attrs as {
-      indent: number;
-      lineHeight: string | null;
-      marginTop: string | null;
-      marginBottom: string | null;
-    };
+    const { indent, lineHeight, marginTop, marginBottom, footnoteAnchor, endnoteAnchor } =
+      node.attrs as {
+        indent: number;
+        lineHeight: string | null;
+        marginTop: string | null;
+        marginBottom: string | null;
+        footnoteAnchor: string | null;
+        endnoteAnchor: string | null;
+      };
     const styleParts: string[] = [];
     if (indent) styleParts.push(indentPadding(indent));
     if (lineHeight) styleParts.push(`line-height: ${lineHeight}`);
@@ -58,6 +69,8 @@ export const CustomParagraph = Paragraph.extend({
       mergeAttributes(this.options.HTMLAttributes, HTMLAttributes, {
         ...(style ? { style } : {}),
         ...(indent ? { "data-indent": String(indent) } : {}),
+        ...(footnoteAnchor ? { "data-footnote-anchor": footnoteAnchor } : {}),
+        ...(endnoteAnchor ? { "data-endnote-anchor": endnoteAnchor } : {}),
       }),
       0,
     ];
