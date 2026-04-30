@@ -3,6 +3,7 @@
 import {
   forwardRef,
   useCallback,
+  useEffect,
   useImperativeHandle,
   useRef,
   useState,
@@ -11,8 +12,10 @@ import type { AiSettings } from "@/lib/settings";
 import { AI_TOOLS, parseSlashCommand, primarySlash, type AiToolId } from "@/lib/aiTools";
 import { streamAiChat, type ChatMessage } from "@/lib/ai";
 import {
+  Check,
   BookOpen,
   Copy,
+  LibraryBig,
   GripVertical,
   ListTree,
   Loader2,
@@ -30,15 +33,19 @@ type ContextBlock = {
   source: "paste" | "selection";
 };
 
+type ApplyTarget = { type: "document" } | { type: "range"; from: number; to: number };
+
 type Props = {
   settings: AiSettings;
   getDocumentHtml: () => string;
   getSelectionText: () => string;
   getSelectionRange: () => { from: number; to: number } | null;
-  applyAiHtml: (
-    html: string,
-    target: { type: "document" } | { type: "range"; from: number; to: number }
-  ) => void;
+  applyAiHtml: (html: string, target: ApplyTarget) => void;
+  stageAiSuggestion: (html: string, target: ApplyTarget) => boolean;
+  acceptStagedSuggestion: () => boolean;
+  rejectStagedSuggestion: () => boolean;
+  hasStagedSuggestion: () => boolean;
+  subscribeStagedSuggestion: (listener: (active: boolean) => void) => () => void;
 };
 
 export type PromptPanelHandle = {
@@ -52,6 +59,10 @@ const MSG_APPLYING_TO_DOC = "Applying changes to your document…";
 /** Shown after a successful document edit (the editor holds the real HTML). */
 const MSG_APPLIED_TO_DOC =
   "I've applied that change to your document — you should see it in the editor.";
+const MSG_PROPOSED_CHANGE =
+  "I prepared a tracked rewrite suggestion. Review it and choose Accept or Reject.";
+const MSG_INLINE_TRACKED =
+  "I inserted a tracked suggestion inline in your document (old vs new). Review it in the editor and click Accept or Reject.";
 
 const SYSTEM: ChatMessage = {
   role: "system",
@@ -60,8 +71,12 @@ const SYSTEM: ChatMessage = {
 When the user wants the document changed (rewrite, edit, fix, translate, format, expand, shorten):
 - Output ONLY the replacement as HTML (e.g. <p>, <strong>, <ul>, <li>) or plain text lines (they will be wrapped as paragraphs). No markdown code fences unless you need to wrap raw HTML.
 - Do not add conversational preambles ("Here is…", "Sure!").
-- If editing a **selected passage** only, output the fragment that replaces that selection—nothing else.
-- If editing the **whole document** (no selection), output the full document body as HTML.
+- Respect the apply target provided in the instruction context:
+  - If apply target is **selection**, output the fragment that replaces only that selected passage.
+  - If apply target is **full document**, output the full document body as HTML.
+- Execute every requested edit in the user instruction (including multi-part requests). Do not stop after the first change.
+- For multi-part edits, internally process as a checklist and ensure all items are reflected in one final output.
+- Do not change unrelated text. Outside the requested edits, preserve wording, order, structure, and citations exactly.
 
 If the user asks a **pure question** that must NOT change the document (definitions, explanations, "what does X mean"), respond with exactly this format on the first line:
 NO_APPLY:
@@ -82,6 +97,35 @@ function newBlockId(): string {
   return `ctx-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+function htmlToPlainText(input: string): string {
+  return input
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|li|h1|h2|h3|h4|h5|h6|blockquote|tr)>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/\u00a0/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function buildLineDiffPreview(beforeText: string, afterText: string): string[] {
+  const before = beforeText.split(/\r?\n/).map((s) => s.trim());
+  const after = afterText.split(/\r?\n/).map((s) => s.trim());
+  const total = Math.max(before.length, after.length);
+  const out: string[] = [];
+  for (let i = 0; i < total; i += 1) {
+    const b = before[i] ?? "";
+    const a = after[i] ?? "";
+    if (!b && !a) continue;
+    if (b === a) {
+      out.push(`  ${b}`);
+      continue;
+    }
+    if (b) out.push(`- ${b}`);
+    if (a) out.push(`+ ${a}`);
+  }
+  return out.slice(0, 16);
+}
+
 export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptPanel(
   {
     settings,
@@ -89,6 +133,11 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
     getSelectionText,
     getSelectionRange,
     applyAiHtml,
+    stageAiSuggestion,
+    acceptStagedSuggestion,
+    rejectStagedSuggestion,
+    hasStagedSuggestion,
+    subscribeStagedSuggestion,
   },
   ref
 ) {
@@ -98,6 +147,13 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [useSelection, setUseSelection] = useState(true);
+  const [reviewBeforeApply, setReviewBeforeApply] = useState(true);
+  const [pendingSuggestion, setPendingSuggestion] = useState<{
+    html: string;
+    target: ApplyTarget;
+    inline: boolean;
+    diffPreview: string[];
+  } | null>(null);
   const [copied, setCopied] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -128,9 +184,17 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
   }, []);
 
   const executeRequest = useCallback(
-    async (args: { userDisplay: string; instructionBody: string }) => {
-      const { userDisplay, instructionBody } = args;
+    async (args: { userDisplay: string; instructionBody: string; forceReview?: boolean }) => {
+      const { userDisplay, instructionBody, forceReview = false } = args;
       if (!instructionBody.trim() || streaming) return;
+      if (pendingSuggestion) {
+        if (pendingSuggestion.inline && !hasStagedSuggestion()) {
+          setPendingSuggestion(null);
+        } else {
+        setError("You have a pending AI suggestion. Accept or reject it before sending a new request.");
+        return;
+        }
+      }
 
       setError(null);
       const selectionRange = useSelection ? getSelectionRange() : null;
@@ -161,7 +225,9 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
         selectionRange && useSelection
           ? "Apply target: **selection** — output only the replacement HTML for the selected range."
           : "Apply target: **full document** — output the full document body as HTML.";
-      contextParts.push(`### Instruction\n${instructionBody}\n\n${applyHint}`);
+      const completionHint =
+        "Important: complete all requested edits step-by-step in one response. Preserve all unrelated text exactly.";
+      contextParts.push(`### Instruction\n${instructionBody}\n\n${applyHint}\n${completionHint}`);
 
       const userPayload = contextParts.join("\n\n");
       const apiMessages: ChatMessage[] = [SYSTEM, { role: "user", content: userPayload }];
@@ -175,7 +241,7 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
       setTurns((prev) => [...prev, { role: "assistant", content: "" }]);
       queueMicrotask(() => scrollDown());
 
-      const applyTarget =
+      const defaultApplyTarget =
         selectionRange && useSelection
           ? ({ type: "range" as const, from: selectionRange.from, to: selectionRange.to } as const)
           : ({ type: "document" as const } as const);
@@ -213,15 +279,46 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
             return copy;
           });
         } else {
-          applyAiHtml(assistant, applyTarget);
-          setTurns((prev) => {
-            const copy = [...prev];
-            const last = copy[copy.length - 1];
-            if (last?.role === "assistant") {
-              copy[copy.length - 1] = { ...last, content: MSG_APPLIED_TO_DOC };
-            }
-            return copy;
-          });
+          const assistantPayload = assistant;
+          const resolvedApplyTarget: ApplyTarget = defaultApplyTarget;
+
+          const shouldReview = forceReview || reviewBeforeApply;
+          if (shouldReview) {
+            const beforeText =
+              resolvedApplyTarget.type === "range" && selectionText
+                ? selectionText
+                : htmlToPlainText(docSnippet);
+            const afterText = htmlToPlainText(assistantPayload);
+            const diffPreview = buildLineDiffPreview(beforeText, afterText);
+            const stagedInline = stageAiSuggestion(assistantPayload, resolvedApplyTarget);
+            setPendingSuggestion({
+              html: assistantPayload,
+              target: resolvedApplyTarget,
+              inline: stagedInline,
+              diffPreview,
+            });
+            setTurns((prev) => {
+              const copy = [...prev];
+              const last = copy[copy.length - 1];
+              if (last?.role === "assistant") {
+                copy[copy.length - 1] = {
+                  ...last,
+                  content: stagedInline ? MSG_INLINE_TRACKED : MSG_PROPOSED_CHANGE,
+                };
+              }
+              return copy;
+            });
+          } else {
+            applyAiHtml(assistantPayload, resolvedApplyTarget);
+            setTurns((prev) => {
+              const copy = [...prev];
+              const last = copy[copy.length - 1];
+              if (last?.role === "assistant") {
+                copy[copy.length - 1] = { ...last, content: MSG_APPLIED_TO_DOC };
+              }
+              return copy;
+            });
+          }
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : "Request failed");
@@ -239,9 +336,13 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
       getSelectionText,
       getSelectionRange,
       useSelection,
+      reviewBeforeApply,
+      pendingSuggestion,
+      hasStagedSuggestion,
       contextBlocks,
       scrollDown,
       applyAiHtml,
+      stageAiSuggestion,
     ]
   );
 
@@ -262,6 +363,7 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
       void executeRequest({
         userDisplay: primarySlash(tool),
         instructionBody: AI_TOOLS[tool].instruction,
+        forceReview: true,
       });
     },
     [executeRequest]
@@ -289,6 +391,55 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
     }
   }
 
+  function acceptSuggestion() {
+    if (!pendingSuggestion) return;
+    if (pendingSuggestion.inline) {
+      acceptStagedSuggestion();
+    } else {
+      applyAiHtml(pendingSuggestion.html, pendingSuggestion.target);
+    }
+    setPendingSuggestion(null);
+    setTurns((prev) => {
+      if (prev.length === 0) return prev;
+      const copy = [...prev];
+      const last = copy[copy.length - 1];
+      if (last?.role === "assistant") {
+        copy[copy.length - 1] = { ...last, content: MSG_APPLIED_TO_DOC };
+      }
+      return copy;
+    });
+    setError(null);
+  }
+
+  function rejectSuggestion() {
+    if (!pendingSuggestion) return;
+    if (pendingSuggestion.inline) {
+      rejectStagedSuggestion();
+    }
+    setPendingSuggestion(null);
+    setTurns((prev) => {
+      if (prev.length === 0) return prev;
+      const copy = [...prev];
+      const last = copy[copy.length - 1];
+      if (last?.role === "assistant") {
+        copy[copy.length - 1] = {
+          ...last,
+          content: "Tracked rewrite suggestion discarded.",
+        };
+      }
+      return copy;
+    });
+    setError(null);
+  }
+
+  useEffect(() => {
+    return subscribeStagedSuggestion((active) => {
+      if (!active) {
+        setPendingSuggestion(null);
+      }
+    });
+  }, [subscribeStagedSuggestion]);
+
   return (
     <div className="flex h-full min-h-0 flex-col border-l border-zinc-200 bg-gradient-to-b from-white to-zinc-50/80 dark:border-surface-border dark:from-surface dark:to-surface-raised">
       <div className="flex shrink-0 items-start gap-2 border-b border-zinc-200/90 px-3 py-2.5 dark:border-surface-border">
@@ -300,7 +451,7 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
             Assistant
           </h2>
           <p className="mt-0.5 text-[11px] leading-snug text-zinc-500 dark:text-zinc-500">
-            Replies apply to the document. Paste adds context blocks. Add an API key in Settings.
+            AI can apply instantly or stage tracked suggestions with Accept/Reject. Paste adds context blocks.
           </p>
         </div>
         {turns.length > 0 && (
@@ -484,6 +635,76 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
             </button>
           </div>
         </div>
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-500">
+            Track changes (review first)
+          </span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={reviewBeforeApply}
+            aria-label="When on, AI rewrites are staged as accept/reject suggestions"
+            onClick={() => setReviewBeforeApply((v) => !v)}
+            className={`relative inline-flex h-6 w-10 shrink-0 rounded-full transition-colors focus-visible:outline focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-surface-raised ${
+              reviewBeforeApply ? "bg-accent" : "bg-zinc-200 dark:bg-zinc-700"
+            }`}
+          >
+            <span
+              className={`pointer-events-none inline-block h-5 w-5 translate-y-0.5 rounded-full bg-white shadow transition-transform ${
+                reviewBeforeApply ? "translate-x-5" : "translate-x-0.5"
+              }`}
+            />
+          </button>
+        </div>
+        {pendingSuggestion && !pendingSuggestion.inline && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-2 dark:border-amber-900/50 dark:bg-amber-950/25">
+            <p className="text-[11px] leading-relaxed text-amber-900 dark:text-amber-200">
+              {pendingSuggestion.inline
+                ? "Inline tracked change inserted in the editor. Accept to keep the new text, or reject to restore old text."
+                : `AI suggestion ready (${pendingSuggestion.target.type === "document" ? "whole document" : "selection"}). Accept to apply, or reject to discard.`}
+            </p>
+            {pendingSuggestion.diffPreview.length > 0 && (
+              <div className="mt-2 max-h-40 overflow-auto rounded border border-amber-200/70 bg-white/75 p-1.5 dark:border-amber-900/40 dark:bg-surface-overlay/70">
+                {pendingSuggestion.diffPreview.map((line, idx) => {
+                  const added = line.startsWith("+ ");
+                  const removed = line.startsWith("- ");
+                  return (
+                    <p
+                      key={`${idx}-${line}`}
+                      className={`font-mono text-[10px] leading-relaxed ${
+                        added
+                          ? "text-emerald-700 dark:text-emerald-300"
+                          : removed
+                            ? "text-rose-700 dark:text-rose-300"
+                            : "text-zinc-600 dark:text-zinc-400"
+                      }`}
+                    >
+                      {line}
+                    </p>
+                  );
+                })}
+              </div>
+            )}
+            <div className="mt-2 flex gap-1.5">
+              <button
+                type="button"
+                onClick={acceptSuggestion}
+                className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-emerald-100 px-2 py-1 text-[11px] font-medium text-emerald-900 transition hover:bg-emerald-200 dark:border-emerald-800/70 dark:bg-emerald-900/30 dark:text-emerald-200 dark:hover:bg-emerald-900/45"
+              >
+                <Check className="h-3.5 w-3.5" />
+                Accept
+              </button>
+              <button
+                type="button"
+                onClick={rejectSuggestion}
+                className="inline-flex items-center gap-1 rounded-md border border-zinc-300 bg-white px-2 py-1 text-[11px] font-medium text-zinc-800 transition hover:bg-zinc-100 dark:border-surface-border dark:bg-surface-raised dark:text-zinc-200 dark:hover:bg-surface-overlay"
+              >
+                <X className="h-3.5 w-3.5" />
+                Reject
+              </button>
+            </div>
+          </div>
+        )}
         <p className="text-[10px] leading-snug text-zinc-500 dark:text-zinc-600">
           {useSelection
             ? "With a selection in the editor, the reply replaces that range. Paste in the box adds context only."
@@ -535,6 +756,16 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
               <BookOpen className="h-3.5 w-3.5 shrink-0 text-accent" aria-hidden />
               Research paper
             </button>
+            <button
+              type="button"
+              disabled={streaming}
+              onClick={() => runTool("citation-reference-check")}
+              className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-zinc-800 transition hover:border-accent/40 hover:bg-accent/5 disabled:opacity-40 dark:border-surface-border dark:bg-surface-raised dark:text-zinc-200 dark:hover:bg-surface-overlay"
+              title="Runs /citations — checks in-text citations, references, duplicates, style consistency"
+            >
+              <LibraryBig className="h-3.5 w-3.5 shrink-0 text-accent" aria-hidden />
+              Citations
+            </button>
           </div>
           <p className="text-[10px] text-zinc-500 dark:text-zinc-600">
             Or type{" "}
@@ -553,6 +784,10 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
             <code className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-[10px] dark:bg-surface-overlay">
               /research-paper
             </code>{" "}
+            or{" "}
+            <code className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-[10px] dark:bg-surface-overlay">
+              /citations
+            </code>{" "}
             in the box.
           </p>
         </div>
@@ -569,7 +804,7 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
                 void send();
               }
             }}
-            placeholder="/fix-grammar · /clean-formatting · /math · /research-paper · or any instruction…"
+            placeholder="/fix-grammar · /clean-formatting · /math · /research-paper · /citations · or any instruction…"
             rows={3}
             disabled={streaming}
             className="min-h-[80px] w-full resize-none rounded-xl border border-zinc-200 bg-zinc-50/80 px-3 py-2.5 pr-12 text-sm text-zinc-900 shadow-inner placeholder:text-zinc-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/25 disabled:opacity-60 dark:border-surface-border dark:bg-surface-overlay dark:text-zinc-100 dark:placeholder:text-zinc-600 dark:focus:ring-accent/20"

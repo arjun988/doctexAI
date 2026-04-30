@@ -139,6 +139,27 @@ export default function EditorPage() {
     },
     []
   );
+  const stageAiSuggestion = useCallback(
+    (
+      html: string,
+      target: { type: "document" } | { type: "range"; from: number; to: number }
+    ) => apiRef.current?.stageAiSuggestion(html, target) ?? false,
+    []
+  );
+  const acceptStagedSuggestion = useCallback(
+    () => apiRef.current?.acceptStagedSuggestion() ?? false,
+    []
+  );
+  const rejectStagedSuggestion = useCallback(
+    () => apiRef.current?.rejectStagedSuggestion() ?? false,
+    []
+  );
+  const hasStagedSuggestion = useCallback(() => apiRef.current?.hasStagedSuggestion() ?? false, []);
+  const subscribeStagedSuggestion = useCallback(
+    (listener: (active: boolean) => void) =>
+      apiRef.current?.subscribeStagedSuggestion(listener) ?? (() => {}),
+    []
+  );
 
   return (
     <div className="flex h-screen min-h-0 flex-col bg-zinc-100 dark:bg-surface">
@@ -180,6 +201,11 @@ export default function EditorPage() {
             getSelectionText={getSelectionText}
             getSelectionRange={getSelectionRange}
             applyAiHtml={applyAiHtml}
+            stageAiSuggestion={stageAiSuggestion}
+            acceptStagedSuggestion={acceptStagedSuggestion}
+            rejectStagedSuggestion={rejectStagedSuggestion}
+            hasStagedSuggestion={hasStagedSuggestion}
+            subscribeStagedSuggestion={subscribeStagedSuggestion}
           />
         </aside>
       </div>

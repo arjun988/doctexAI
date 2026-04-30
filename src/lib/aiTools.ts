@@ -2,7 +2,8 @@ export type AiToolId =
   | "fix-grammar"
   | "clean-formatting"
   | "math-equations"
-  | "research-paper";
+  | "research-paper"
+  | "citation-reference-check";
 
 export const AI_TOOLS: Record<
   AiToolId,
@@ -86,6 +87,29 @@ Reformat the scope into a **conference/journal-style** document using **inline C
 
 ### Output rules (same as other tools)
 - Output **only** valid HTML for the scope: **selection** → fragment only; **no selection** → **full document body** HTML. No markdown fences, no commentary.`,
+  },
+  "citation-reference-check": {
+    slashes: ["/citations", "/reference-check", "/references", "/citation-check"],
+    label: "Citations and references",
+    instruction: `## Tool: Citation and reference consistency check (IEEE/APA/MLA)
+- Validate and normalize citation consistency across in-text citations and bibliography/reference list within the provided scope.
+- Keep the original factual meaning. Focus on citation quality, style consistency, ordering, and cross-reference integrity.
+
+### What to check and fix
+- Identify in-text citations that have no matching bibliography entry; add a clear placeholder entry only when necessary and clearly implied.
+- Identify bibliography entries not cited in text; keep them but mark/organize consistently unless instructed to remove.
+- Detect duplicate bibliography entries and merge into one canonical entry while preserving content.
+- Normalize citation style to **IEEE**, **APA**, or **MLA** if the user explicitly requests one; otherwise preserve the existing dominant style and make it internally consistent.
+- Enforce numbering/order consistency for numeric styles (e.g., IEEE/Vancouver-like): in-text numbers should map correctly to ordered references.
+- Normalize punctuation, spacing, and separators in in-text citation clusters (for example, [1,2] -> [1, 2], [3-5] formatting consistency).
+- Preserve existing URLs/DOIs where present; do not invent publication metadata.
+
+### Output constraints
+- Output **only** valid HTML for the scope.
+- Same scope rules as other tools:
+  - **selection**: output only the replacement HTML fragment for that selected region.
+  - **no selection**: output the full document body HTML.
+- No markdown fences, no commentary, no prefixed explanations.`,
   },
 };
 
