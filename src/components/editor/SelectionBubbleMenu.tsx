@@ -10,6 +10,7 @@ import {
   Bold,
   BookOpen,
   ChevronDown,
+  LibraryBig,
   Highlighter,
   Italic,
   Link2,
@@ -145,6 +146,16 @@ function AiToolsDropdown({ onAiTool }: { onAiTool: (tool: AiToolId) => void }) {
         >
           <BookOpen className="h-4 w-4 shrink-0 text-amber-700 dark:text-amber-400" />
           <span className="font-medium">Research paper</span>
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => run("citation-reference-check")}
+          className="flex w-full items-center gap-2 px-3 py-2 text-left text-zinc-800 transition hover:bg-cyan-50 dark:text-zinc-100 dark:hover:bg-cyan-950/50"
+        >
+          <LibraryBig className="h-4 w-4 shrink-0 text-cyan-700 dark:text-cyan-400" />
+          <span className="font-medium">Citations</span>
         </button>
       </div>,
       document.body
