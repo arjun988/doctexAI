@@ -157,6 +157,8 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
   const [error, setError] = useState<string | null>(null);
   const [useSelection, setUseSelection] = useState(true);
   const [reviewBeforeApply, setReviewBeforeApply] = useState(true);
+  const [controlsCollapsed, setControlsCollapsed] = useState(false);
+  const [controlsHeight, setControlsHeight] = useState(260);
   const [pendingSuggestion, setPendingSuggestion] = useState<{
     html: string;
     target: ApplyTarget;
@@ -167,11 +169,13 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const controlsResizeRef = useRef<{ startY: number; startH: number } | null>(null);
 
   const scrollDown = useCallback(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
   const outline = getDocumentOutline();
+  const clampControlsHeight = useCallback((value: number) => Math.max(120, Math.min(520, value)), []);
 
   useEffect(() => {
     if (outline.length === 0) {
@@ -182,6 +186,24 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
       setSelectedSectionId(outline[0].id);
     }
   }, [outline, selectedSectionId]);
+
+  useEffect(() => {
+    const onMove = (event: MouseEvent) => {
+      const drag = controlsResizeRef.current;
+      if (!drag) return;
+      const dy = drag.startY - event.clientY;
+      setControlsHeight(clampControlsHeight(drag.startH + dy));
+    };
+    const onUp = () => {
+      controlsResizeRef.current = null;
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [clampControlsHeight]);
 
   const addSelectionAsContext = useCallback(() => {
     const t = getSelectionText().trim();
@@ -670,7 +692,35 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
       )}
 
       <div className="shrink-0 space-y-2 border-t border-zinc-200/90 bg-white/90 p-3 backdrop-blur-sm dark:border-surface-border dark:bg-surface-raised/95">
-        {contextBlocks.length > 0 && (
+        <div className="flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onMouseDown={(event) => {
+              event.preventDefault();
+              controlsResizeRef.current = { startY: event.clientY, startH: controlsHeight };
+              setControlsCollapsed(false);
+            }}
+            className="inline-flex items-center gap-1 rounded border border-zinc-200 bg-white px-2 py-1 text-[10px] font-medium text-zinc-600 hover:bg-zinc-100 dark:border-surface-border dark:bg-surface-raised dark:text-zinc-300 dark:hover:bg-surface-overlay"
+            title="Drag to resize options area"
+          >
+            Drag to resize
+          </button>
+          <button
+            type="button"
+            onClick={() => setControlsCollapsed((v) => !v)}
+            className="inline-flex items-center gap-1 rounded border border-zinc-200 bg-white px-2 py-1 text-[10px] font-medium text-zinc-600 hover:bg-zinc-100 dark:border-surface-border dark:bg-surface-raised dark:text-zinc-300 dark:hover:bg-surface-overlay"
+            title={controlsCollapsed ? "Expand options area" : "Collapse options area"}
+          >
+            {controlsCollapsed ? "Expand options" : "Collapse options"}
+          </button>
+        </div>
+
+        {!controlsCollapsed && (
+          <div
+            className="space-y-2 overflow-y-auto pr-1"
+            style={{ maxHeight: `${controlsHeight}px` }}
+          >
+            {contextBlocks.length > 0 && (
           <div className="space-y-1.5">
             <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-600">
               Context
@@ -707,9 +757,9 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
               ))}
             </ul>
           </div>
-        )}
+            )}
 
-        <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={addSelectionAsContext}
@@ -740,8 +790,8 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
               />
             </button>
           </div>
-        </div>
-        <div className="flex items-center justify-between gap-2">
+            </div>
+            <div className="flex items-center justify-between gap-2">
           <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-500">Scope</span>
           <select
             value={scopeMode}
@@ -752,8 +802,8 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
             <option value="section">Section</option>
             <option value="document">Document</option>
           </select>
-        </div>
-        {scopeMode === "section" && (
+            </div>
+            {scopeMode === "section" && (
           <div className="space-y-1">
             <select
               value={selectedSectionId}
@@ -772,8 +822,8 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
               )}
             </select>
           </div>
-        )}
-        <div className="flex items-center justify-between">
+            )}
+            <div className="flex items-center justify-between">
           <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-500">Agent runner</span>
           <button
             type="button"
@@ -791,8 +841,8 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
               }`}
             />
           </button>
-        </div>
-        <div className="space-y-1.5">
+            </div>
+            <div className="space-y-1.5">
           <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-600">
             Document map
           </span>
@@ -814,8 +864,8 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
               ))
             )}
           </div>
-        </div>
-        <div className="flex items-center justify-between">
+            </div>
+            <div className="flex items-center justify-between">
           <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-500">
             Track changes (review first)
           </span>
@@ -835,8 +885,8 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
               }`}
             />
           </button>
-        </div>
-        {pendingSuggestion && !pendingSuggestion.inline && (
+            </div>
+            {pendingSuggestion && !pendingSuggestion.inline && (
           <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-2 dark:border-amber-900/50 dark:bg-amber-950/25">
             <p className="text-[11px] leading-relaxed text-amber-900 dark:text-amber-200">
               {pendingSuggestion.inline
@@ -884,14 +934,14 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
               </button>
             </div>
           </div>
-        )}
-        <p className="text-[10px] leading-snug text-zinc-500 dark:text-zinc-600">
+            )}
+            <p className="text-[10px] leading-snug text-zinc-500 dark:text-zinc-600">
           {useSelection
             ? "With a selection in the editor, the reply replaces that range. Paste in the box adds context only."
             : "Full document will be replaced by the model output (unless the reply is a chat-only answer)."}
-        </p>
+            </p>
 
-        <div className="space-y-1.5">
+            <div className="space-y-1.5">
           <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-600">
             Tools
           </span>
@@ -970,7 +1020,9 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
             </code>{" "}
             in the box.
           </p>
-        </div>
+            </div>
+          </div>
+        )}
 
         <div className="relative">
           <textarea
