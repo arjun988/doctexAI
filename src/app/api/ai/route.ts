@@ -6,6 +6,7 @@ import {
 } from "@/lib/aiProxySecurity";
 
 const OPENAI_BASE = "https://api.openai.com/v1";
+const UPSTREAM_TIMEOUT_MS = 60_000;
 
 type ChatMessage = { role: string; content: string };
 
@@ -72,6 +73,16 @@ function openAiSseChunk(content: string): string {
   return `data: ${payload}\n\n`;
 }
 
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 function parseBody(raw: string): Body | null {
   let body: Body;
   try {
@@ -133,18 +144,27 @@ export async function POST(req: NextRequest) {
   }
 
   if (provider === "openai") {
-    const upstream = await fetch(`${OPENAI_BASE}/chat/completions`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        stream: true,
-      }),
-    });
+    let upstream: Response;
+    try {
+      upstream = await fetchWithTimeout(
+        `${OPENAI_BASE}/chat/completions`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model,
+            messages,
+            stream: true,
+          }),
+        },
+        UPSTREAM_TIMEOUT_MS
+      );
+    } catch {
+      return jsonError("AI provider request timed out. Try again.", 504);
+    }
 
     if (!upstream.ok) {
       const st = upstream.status;
@@ -176,14 +196,23 @@ export async function POST(req: NextRequest) {
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`;
 
-  const upstream = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-goog-api-key": apiKey.trim(),
-    },
-    body: JSON.stringify(geminiBody),
-  });
+  let upstream: Response;
+  try {
+    upstream = await fetchWithTimeout(
+      url,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey.trim(),
+        },
+        body: JSON.stringify(geminiBody),
+      },
+      UPSTREAM_TIMEOUT_MS
+    );
+  } catch {
+    return jsonError("AI provider request timed out. Try again.", 504);
+  }
 
   if (!upstream.ok) {
     const st = upstream.status;
@@ -205,6 +234,33 @@ export async function POST(req: NextRequest) {
       const dec = new TextDecoder();
       let lineBuffer = "";
       let textAccumulated = "";
+      const processSseLine = (line: string) => {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed === "data: [DONE]") return;
+        if (!trimmed.startsWith("data: ")) return;
+        const jsonStr = trimmed.slice(6).trim();
+        if (!jsonStr || jsonStr === "[DONE]") return;
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(jsonStr);
+        } catch {
+          return;
+        }
+        const text = extractGeminiText(parsed);
+        if (!text) return;
+
+        let delta = "";
+        if (textAccumulated && text.startsWith(textAccumulated)) {
+          delta = text.slice(textAccumulated.length);
+          textAccumulated = text;
+        } else {
+          delta = text;
+          textAccumulated += text;
+        }
+        if (delta) {
+          controller.enqueue(enc.encode(openAiSseChunk(delta)));
+        }
+      };
 
       try {
         while (true) {
@@ -214,34 +270,10 @@ export async function POST(req: NextRequest) {
           const lines = lineBuffer.split("\n");
           lineBuffer = lines.pop() ?? "";
 
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed || trimmed === "data: [DONE]") continue;
-            if (!trimmed.startsWith("data: ")) continue;
-            const jsonStr = trimmed.slice(6).trim();
-            if (!jsonStr || jsonStr === "[DONE]") continue;
-            let parsed: unknown;
-            try {
-              parsed = JSON.parse(jsonStr);
-            } catch {
-              continue;
-            }
-            const text = extractGeminiText(parsed);
-            if (!text) continue;
-
-            let delta = "";
-            if (textAccumulated && text.startsWith(textAccumulated)) {
-              delta = text.slice(textAccumulated.length);
-              textAccumulated = text;
-            } else {
-              delta = text;
-              textAccumulated += text;
-            }
-            if (delta) {
-              controller.enqueue(enc.encode(openAiSseChunk(delta)));
-            }
-          }
+          for (const line of lines) processSseLine(line);
         }
+        lineBuffer += dec.decode();
+        if (lineBuffer.trim()) processSseLine(lineBuffer);
         controller.enqueue(enc.encode("data: [DONE]\n\n"));
         controller.close();
       } catch (e) {

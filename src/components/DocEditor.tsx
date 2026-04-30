@@ -2,6 +2,7 @@
 
 import { useEditor, EditorContent, type Editor } from "@tiptap/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DOMSerializer } from "prosemirror-model";
 import { normalizeAiOutput } from "@/lib/aiDocumentApply";
 import { loadDocumentHtml, saveDocumentHtml } from "@/lib/settings";
 import type { DocumentLayout } from "@/lib/documentLayout";
@@ -12,6 +13,7 @@ import { FormattingToolbar } from "@/components/editor/FormattingToolbar";
 import { SelectionBubbleMenu } from "@/components/editor/SelectionBubbleMenu";
 
 export type SelectionRange = { from: number; to: number };
+export type OutlineItem = { id: string; level: number; title: string; from: number; to: number };
 type ChangeDecision = "pending" | "accepted" | "rejected";
 type StagedEntry = { kind: "same"; line: string } | { kind: "change"; id: number; oldLine: string; newLine: string };
 
@@ -37,6 +39,8 @@ export type EditorApi = {
   rejectStagedSuggestion: () => boolean;
   hasStagedSuggestion: () => boolean;
   subscribeStagedSuggestion: (listener: (active: boolean) => void) => () => void;
+  getDocumentOutline: () => OutlineItem[];
+  focusRange: (from: number, to: number) => void;
 };
 
 type Props = {
@@ -132,6 +136,41 @@ export function DocEditor({ className, layout, onOpenPageSetup, onReady, onAiToo
     const { from, to } = ed.state.selection;
     if (from === to) return null;
     return { from, to };
+  }, []);
+  const getSelectionHtml = useCallback((from: number, to: number): string => {
+    const ed = editorRef.current;
+    if (!ed) return "";
+    const slice = ed.state.doc.slice(from, to);
+    const serializer = DOMSerializer.fromSchema(ed.state.schema);
+    const frag = serializer.serializeFragment(slice.content);
+    const wrap = document.createElement("div");
+    wrap.appendChild(frag);
+    return wrap.innerHTML;
+  }, []);
+  const getDocumentOutline = useCallback((): OutlineItem[] => {
+    const ed = editorRef.current;
+    if (!ed) return [];
+    const out: OutlineItem[] = [];
+    let idx = 1;
+    ed.state.doc.descendants((node, pos) => {
+      if (node.type.name !== "heading") return true;
+      const level = typeof node.attrs.level === "number" ? node.attrs.level : 1;
+      const title = node.textContent.trim() || `Untitled section ${idx}`;
+      out.push({
+        id: `heading-${idx++}`,
+        level,
+        title,
+        from: pos,
+        to: pos + node.nodeSize,
+      });
+      return true;
+    });
+    return out;
+  }, []);
+  const focusRange = useCallback((from: number, to: number) => {
+    const ed = editorRef.current;
+    if (!ed) return;
+    ed.chain().focus().setTextSelection({ from, to }).run();
   }, []);
   const applyAiHtml = useCallback(
     (
@@ -312,7 +351,7 @@ export function DocEditor({ className, layout, onOpenPageSetup, onReady, onAiToo
       stagedRef.current = {
         from: target.from,
         to: target.to,
-        oldHtml: normalizeAiOutput(oldText),
+        oldHtml: getSelectionHtml(target.from, target.to),
         newHtml: normalizedNew,
         entries,
         decisions,
@@ -328,7 +367,7 @@ export function DocEditor({ className, layout, onOpenPageSetup, onReady, onAiToo
       }
       return ok;
     },
-    [applyStagedPreview, notifyStagedState]
+    [applyStagedPreview, notifyStagedState, getSelectionHtml]
   );
   const acceptStagedSuggestion = useCallback((): boolean => {
     const ed = editorRef.current;
@@ -386,6 +425,8 @@ export function DocEditor({ className, layout, onOpenPageSetup, onReady, onAiToo
       rejectStagedSuggestion,
       hasStagedSuggestion,
       subscribeStagedSuggestion,
+      getDocumentOutline,
+      focusRange,
     });
   }, [
     editor,
@@ -401,6 +442,8 @@ export function DocEditor({ className, layout, onOpenPageSetup, onReady, onAiToo
     rejectStagedSuggestion,
     hasStagedSuggestion,
     subscribeStagedSuggestion,
+    getDocumentOutline,
+    focusRange,
   ]);
 
   useEffect(() => {
