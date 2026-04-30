@@ -130,6 +130,10 @@ export default function EditorPage() {
   const getDocumentHtml = useCallback(() => apiRef.current?.getHtml() ?? "", []);
   const getSelectionText = useCallback(() => apiRef.current?.getSelectionText() ?? "", []);
   const getSelectionRange = useCallback(() => apiRef.current?.getSelectionRange() ?? null, []);
+  const getDocumentOutline = useCallback(() => apiRef.current?.getDocumentOutline() ?? [], []);
+  const focusRange = useCallback((from: number, to: number) => {
+    apiRef.current?.focusRange(from, to);
+  }, []);
   const applyAiHtml = useCallback(
     (
       html: string,
@@ -200,6 +204,8 @@ export default function EditorPage() {
             getDocumentHtml={getDocumentHtml}
             getSelectionText={getSelectionText}
             getSelectionRange={getSelectionRange}
+            getDocumentOutline={getDocumentOutline}
+            focusRange={focusRange}
             applyAiHtml={applyAiHtml}
             stageAiSuggestion={stageAiSuggestion}
             acceptStagedSuggestion={acceptStagedSuggestion}

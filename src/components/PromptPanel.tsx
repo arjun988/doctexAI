@@ -10,7 +10,8 @@ import {
 } from "react";
 import type { AiSettings } from "@/lib/settings";
 import { AI_TOOLS, parseSlashCommand, primarySlash, type AiToolId } from "@/lib/aiTools";
-import { streamAiChat, type ChatMessage } from "@/lib/ai";
+import { completeAiChat, streamAiChat, type ChatMessage } from "@/lib/ai";
+import type { OutlineItem } from "@/components/DocEditor";
 import {
   Check,
   BookOpen,
@@ -40,6 +41,8 @@ type Props = {
   getDocumentHtml: () => string;
   getSelectionText: () => string;
   getSelectionRange: () => { from: number; to: number } | null;
+  getDocumentOutline: () => OutlineItem[];
+  focusRange: (from: number, to: number) => void;
   applyAiHtml: (html: string, target: ApplyTarget) => void;
   stageAiSuggestion: (html: string, target: ApplyTarget) => boolean;
   acceptStagedSuggestion: () => boolean;
@@ -63,6 +66,7 @@ const MSG_PROPOSED_CHANGE =
   "I prepared a tracked rewrite suggestion. Review it and choose Accept or Reject.";
 const MSG_INLINE_TRACKED =
   "I inserted a tracked suggestion inline in your document (old vs new). Review it in the editor and click Accept or Reject.";
+const MSG_AGENT_RUNNING = "Agent is planning and applying your requested changes…";
 
 const SYSTEM: ChatMessage = {
   role: "system",
@@ -132,6 +136,8 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
     getDocumentHtml,
     getSelectionText,
     getSelectionRange,
+    getDocumentOutline,
+    focusRange,
     applyAiHtml,
     stageAiSuggestion,
     acceptStagedSuggestion,
@@ -145,6 +151,9 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
   const [contextBlocks, setContextBlocks] = useState<ContextBlock[]>([]);
   const [turns, setTurns] = useState<ChatMessage[]>([]);
   const [streaming, setStreaming] = useState(false);
+  const [agentMode, setAgentMode] = useState(false);
+  const [scopeMode, setScopeMode] = useState<"selection" | "document" | "section">("selection");
+  const [selectedSectionId, setSelectedSectionId] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [useSelection, setUseSelection] = useState(true);
   const [reviewBeforeApply, setReviewBeforeApply] = useState(true);
@@ -157,10 +166,22 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
   const [copied, setCopied] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const scrollDown = useCallback(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
+  const outline = getDocumentOutline();
+
+  useEffect(() => {
+    if (outline.length === 0) {
+      if (selectedSectionId) setSelectedSectionId("");
+      return;
+    }
+    if (!selectedSectionId || !outline.some((s) => s.id === selectedSectionId)) {
+      setSelectedSectionId(outline[0].id);
+    }
+  }, [outline, selectedSectionId]);
 
   const addSelectionAsContext = useCallback(() => {
     const t = getSelectionText().trim();
@@ -197,9 +218,22 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
       }
 
       setError(null);
-      const selectionRange = useSelection ? getSelectionRange() : null;
+      const section = outline.find((s) => s.id === selectedSectionId) ?? null;
+      const selectionRange =
+        scopeMode === "selection" && useSelection
+          ? getSelectionRange()
+          : scopeMode === "section" && section
+            ? { from: section.from, to: section.to }
+            : null;
       const selectionText = getSelectionText().trim();
       const docSnippet = getDocumentHtml();
+      const isFullDocTarget = !selectionRange;
+      if (isFullDocTarget && docSnippet.length > 120_000) {
+        setError(
+          "Document is too large for safe full rewrite. Use section scope or select a range before running AI."
+        );
+        return;
+      }
       const prior =
         turns.length > 0
           ? turns
@@ -215,14 +249,17 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
         });
       }
       if (useSelection && selectionText && selectionRange) {
-        contextParts.push(`### Active editor selection (plain text)\n${selectionText}`);
+        contextParts.push(`### Active editor target (plain text)\n${selectionText}`);
+      }
+      if (scopeMode === "section" && section) {
+        contextParts.push(`### Target section\n${section.title} (level ${section.level})`);
       }
       contextParts.push(`### Document (HTML)\n${docSnippet.slice(0, 120_000)}`);
       if (prior) {
         contextParts.push(`### Prior conversation\n${prior}`);
       }
       const applyHint =
-        selectionRange && useSelection
+        selectionRange
           ? "Apply target: **selection** — output only the replacement HTML for the selected range."
           : "Apply target: **full document** — output the full document body as HTML.";
       const completionHint =
@@ -236,36 +273,92 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
       setInput("");
       setContextBlocks([]);
       setStreaming(true);
+      abortRef.current = new AbortController();
 
       let assistant = "";
       setTurns((prev) => [...prev, { role: "assistant", content: "" }]);
       queueMicrotask(() => scrollDown());
 
       const defaultApplyTarget =
-        selectionRange && useSelection
+        selectionRange
           ? ({ type: "range" as const, from: selectionRange.from, to: selectionRange.to } as const)
           : ({ type: "document" as const } as const);
 
       try {
-        await streamAiChat(settings, apiMessages, (delta) => {
-          assistant += delta;
+        if (agentMode) {
           setTurns((prev) => {
             const copy = [...prev];
             const last = copy[copy.length - 1];
             if (last?.role === "assistant") {
-              const isNoApply = /^\s*NO_APPLY:/i.test(assistant);
-              let display = "";
-              if (isNoApply) {
-                display = assistant.replace(/^\s*NO_APPLY:\s*/i, "").trimEnd();
-              } else if (assistant.trim()) {
-                display = MSG_APPLYING_TO_DOC;
-              }
-              copy[copy.length - 1] = { ...last, content: display };
+              copy[copy.length - 1] = { ...last, content: MSG_AGENT_RUNNING };
             }
             return copy;
           });
-          requestAnimationFrame(() => scrollDown());
-        });
+          const planPrompt: ChatMessage[] = [
+            {
+              role: "system",
+              content:
+                "Create a concise edit plan checklist for the user's document instruction. Output plain text checklist only.",
+            },
+            { role: "user", content: userPayload },
+          ];
+          const plan = await completeAiChat(settings, planPrompt, abortRef.current.signal);
+          const executePrompt: ChatMessage[] = [
+            SYSTEM,
+            {
+              role: "user",
+              content: `${userPayload}\n\n### Plan checklist\n${plan}\n\nFollow every checklist item in order.`,
+            },
+          ];
+          assistant = await completeAiChat(settings, executePrompt, abortRef.current.signal);
+          const validatePrompt: ChatMessage[] = [
+            {
+              role: "system",
+              content:
+                "Verify whether the proposed output satisfies every checklist step. Reply with PASS or FAIL then optional short reason.",
+            },
+            {
+              role: "user",
+              content: `Checklist:\n${plan}\n\nCandidate output:\n${assistant}`,
+            },
+          ];
+          const verdict = await completeAiChat(settings, validatePrompt, abortRef.current.signal);
+          if (/^\s*FAIL\b/i.test(verdict)) {
+            const repairPrompt: ChatMessage[] = [
+              SYSTEM,
+              {
+                role: "user",
+                content: `${userPayload}\n\nPrevious output missed some checklist items. Fix and return corrected final HTML only.`,
+              },
+            ];
+            assistant = await completeAiChat(settings, repairPrompt, abortRef.current.signal);
+          }
+        } else {
+          await streamAiChat(
+            settings,
+            apiMessages,
+            (delta) => {
+              assistant += delta;
+              setTurns((prev) => {
+                const copy = [...prev];
+                const last = copy[copy.length - 1];
+                if (last?.role === "assistant") {
+                  const isNoApply = /^\s*NO_APPLY:/i.test(assistant);
+                  let display = "";
+                  if (isNoApply) {
+                    display = assistant.replace(/^\s*NO_APPLY:\s*/i, "").trimEnd();
+                  } else if (assistant.trim()) {
+                    display = MSG_APPLYING_TO_DOC;
+                  }
+                  copy[copy.length - 1] = { ...last, content: display };
+                }
+                return copy;
+              });
+              requestAnimationFrame(() => scrollDown());
+            },
+            abortRef.current.signal
+          );
+        }
 
         const noApplyMatch = assistant.match(NO_APPLY);
         if (noApplyMatch) {
@@ -321,9 +414,14 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
           }
         }
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Request failed");
+        if (e instanceof Error && e.name === "AbortError") {
+          setError("Request cancelled.");
+        } else {
+          setError(e instanceof Error ? e.message : "Request failed");
+        }
         setTurns((prev) => prev.slice(0, -2));
       } finally {
+        abortRef.current = null;
         setStreaming(false);
         scrollDown();
       }
@@ -335,7 +433,11 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
       getDocumentHtml,
       getSelectionText,
       getSelectionRange,
+      outline,
+      selectedSectionId,
+      scopeMode,
       useSelection,
+      agentMode,
       reviewBeforeApply,
       pendingSuggestion,
       hasStagedSuggestion,
@@ -389,6 +491,10 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
     } catch {
       /* ignore */
     }
+  }
+
+  function cancelRequest() {
+    abortRef.current?.abort();
   }
 
   function acceptSuggestion() {
@@ -635,6 +741,80 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
             </button>
           </div>
         </div>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-500">Scope</span>
+          <select
+            value={scopeMode}
+            onChange={(e) => setScopeMode(e.target.value as "selection" | "document" | "section")}
+            className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-[11px] text-zinc-800 dark:border-surface-border dark:bg-surface-overlay dark:text-zinc-200"
+          >
+            <option value="selection">Selection</option>
+            <option value="section">Section</option>
+            <option value="document">Document</option>
+          </select>
+        </div>
+        {scopeMode === "section" && (
+          <div className="space-y-1">
+            <select
+              value={selectedSectionId}
+              onChange={(e) => setSelectedSectionId(e.target.value)}
+              className="w-full rounded-md border border-zinc-200 bg-white px-2 py-1 text-[11px] text-zinc-800 dark:border-surface-border dark:bg-surface-overlay dark:text-zinc-200"
+            >
+              {outline.length === 0 ? (
+                <option value="">No headings found</option>
+              ) : (
+                outline.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {" ".repeat(Math.max(0, item.level - 1) * 2)}
+                    {item.title}
+                  </option>
+                ))
+              )}
+            </select>
+          </div>
+        )}
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-500">Agent runner</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={agentMode}
+            aria-label="When on, run plan execute validate apply workflow"
+            onClick={() => setAgentMode((v) => !v)}
+            className={`relative inline-flex h-6 w-10 shrink-0 rounded-full transition-colors focus-visible:outline focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-surface-raised ${
+              agentMode ? "bg-accent" : "bg-zinc-200 dark:bg-zinc-700"
+            }`}
+          >
+            <span
+              className={`pointer-events-none inline-block h-5 w-5 translate-y-0.5 rounded-full bg-white shadow transition-transform ${
+                agentMode ? "translate-x-5" : "translate-x-0.5"
+              }`}
+            />
+          </button>
+        </div>
+        <div className="space-y-1.5">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-600">
+            Document map
+          </span>
+          <div className="max-h-28 space-y-1 overflow-y-auto rounded-md border border-zinc-200/80 bg-white/70 p-1.5 dark:border-surface-border dark:bg-surface-overlay/60">
+            {outline.length === 0 ? (
+              <p className="text-[10px] text-zinc-500 dark:text-zinc-500">No headings found yet.</p>
+            ) : (
+              outline.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => focusRange(item.from, item.to)}
+                  className="block w-full truncate rounded px-1.5 py-1 text-left text-[10px] text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-surface-overlay"
+                  style={{ paddingLeft: `${0.25 + Math.max(0, item.level - 1) * 0.5}rem` }}
+                  title={item.title}
+                >
+                  {item.title}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
         <div className="flex items-center justify-between">
           <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-500">
             Track changes (review first)
@@ -823,6 +1003,16 @@ export const PromptPanel = forwardRef<PromptPanelHandle, Props>(function PromptP
               <Send className="h-4 w-4" />
             )}
           </button>
+          {streaming && (
+            <button
+              type="button"
+              onClick={cancelRequest}
+              className="absolute bottom-2 right-12 inline-flex h-9 items-center justify-center rounded-lg border border-zinc-300 bg-white px-2 text-[11px] font-medium text-zinc-700 shadow-sm transition hover:bg-zinc-100 dark:border-surface-border dark:bg-surface-raised dark:text-zinc-200 dark:hover:bg-surface-overlay"
+              title="Cancel request"
+            >
+              Cancel
+            </button>
+          )}
         </div>
 
         <p className="text-center text-[10px] text-zinc-400 dark:text-zinc-600">
